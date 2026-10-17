@@ -75,5 +75,23 @@ pub struct Palette {
     pub code: Rgba,
 }
 
+impl Palette {
+    /// 引用的底：页面的底往字挪一点（比页面深一档，同卡片）。
+    pub fn quote(&self) -> Rgba {
+        mix(self.background, self.text, 4)
+    }
+}
+
+/// `from` 往 `to` 挪 `percent`（0 到 100，超了照 100）：每个通道各算，四舍五入，不透明度照 `from`。
+pub fn mix(from: Rgba, to: Rgba, percent: u8) -> Rgba {
+    let percent = u32::from(percent.min(100));
+    let mut out = from;
+    for (slot, (a, b)) in out.iter_mut().zip(from.iter().zip(to.iter())).take(3) {
+        let value = (u32::from(*a) * (100 - percent) + u32::from(*b) * percent + 50) / 100;
+        *slot = u8::try_from(value).unwrap_or(u8::MAX);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests;

@@ -1,17 +1,18 @@
-//! 画（设计 36 第四节）：Markdown 读成块、排字、画到页面上、编成 PNG。R-1 只有段落和换行（软换行照旧版也换行），别的
-//! Markdown 照它的字画成段落，R-2 起一样一样补。
+//! 画（设计 36 第四节）：Markdown 读成块（`crate::markdown`）、一块一块排字（[`layout`]）、画到页面上（[`draw`]）、编成 PNG。
+//! R-2 上一栏往下排；分栏、分页随 R-2 下。
 //!
 //! - 字体库、字形的缓存放在 [`Engine`] 里，一次只画一张（调的一方拿锁）。字体库第一次画的时候才读（包常开，闲着不占）。
 //! - 字形照透明度叠到页面上（[`paint`]），不盖像素：mermaid、公式以后也照这一条叠（设计 36 第四节第 2 条）。
 
-mod blocks;
+mod draw;
+mod layout;
 mod paint;
 mod units;
 
 use std::cell::RefCell;
 
 use cosmic_text::fontdb::{Database, Family, Query};
-use cosmic_text::{Attrs, Buffer, Color, FontSystem, Metrics, Shaping, SwashCache, Weight, Wrap};
+use cosmic_text::{FontSystem, SwashCache, Weight};
 use image::RgbaImage;
 
 use crate::fonts::{self, Catalog, Families, FontError, Generic};
@@ -25,12 +26,6 @@ pub const PADDING: u32 = 64;
 
 /// 一页最矮（同旧版）。
 pub const MIN_HEIGHT: u32 = 360;
-
-/// 行高是字号的几倍。
-const LINE_HEIGHT: f32 = 1.6;
-
-/// 段和段之间空多少，字号的几倍。
-const PARAGRAPH_GAP: f32 = 0.6;
 
 /// 字形的缓存最多留多少个，多了清空（同旧版）。
 const MAX_CACHED_GLYPHS: usize = 2048;
@@ -92,40 +87,39 @@ impl Engine {
         if self.cache.image_cache.len() > MAX_CACHED_GLYPHS {
             self.cache.image_cache.clear();
         }
-        let size = units::float(style.font_size);
-        let metrics = Metrics::new(size, (size * LINE_HEIGHT).round());
-        let attrs = Attrs::new()
-            .family(Family::Name(&self.families.body))
-            .color(color(style.palette.text));
-        let mut laid = Vec::new();
-        for paragraph in blocks::paragraphs(markdown) {
-            let mut buffer = Buffer::new(&mut self.system, metrics);
-            buffer.set_size(Some(units::float(COLUMN)), None);
-            buffer.set_wrap(Wrap::WordOrGlyph);
-            buffer.set_text(&paragraph, &attrs, Shaping::Advanced, None);
-            buffer.shape_until_scroll(&mut self.system, true);
-            let height = buffer
-                .layout_runs()
-                .map(|run| run.line_top + run.line_height)
-                .fold(0.0_f32, f32::max);
-            laid.push((buffer, units::ceil(height)));
+        let look = layout::Look {
+            palette: style.palette,
+            size: units::float(style.font_size),
+            body: &self.families.body,
+            code: &self.families.code,
+        };
+        let laid: Vec<layout::Laid> = crate::markdown::blocks(markdown)
+            .iter()
+            .map(|block| layout::lay(&mut self.system, block, &look))
+            .collect();
+        let mut tops = Vec::with_capacity(laid.len());
+        let mut bottom = 0;
+        for (index, block) in laid.iter().enumerate() {
+            let gap = if index == 0 {
+                0
+            } else {
+                block.margin.0.max(laid[index - 1].margin.1)
+            };
+            tops.push(bottom + gap);
+            bottom += gap + block.height;
         }
-        let gap = units::ceil(size * PARAGRAPH_GAP);
-        let content = laid.iter().map(|(_, height)| height).sum::<u32>()
-            + gap * u32::try_from(laid.len().saturating_sub(1)).unwrap_or(0);
         let width = PADDING * 2 + COLUMN;
-        let height = (PADDING * 2 + content).max(MIN_HEIGHT);
+        let height = (PADDING * 2 + bottom).max(MIN_HEIGHT);
         let mut image = RgbaImage::from_pixel(width, height, image::Rgba(style.palette.background));
-        let mut top = PADDING;
-        for (buffer, height) in &laid {
-            paint::text(
+        for (block, top) in laid.iter().zip(tops) {
+            draw::block(
                 &mut image,
                 &mut self.system,
                 &mut self.cache,
-                buffer,
-                (PADDING, top),
+                block,
+                (PADDING, PADDING + top),
+                &style.palette,
             );
-            top += height + gap;
         }
         Page {
             png: paint::png(&image),
@@ -133,11 +127,6 @@ impl Engine {
             height,
         }
     }
-}
-
-/// 颜色换成 cosmic-text 的。
-fn color([r, g, b, a]: [u8; 4]) -> Color {
-    Color::rgba(r, g, b, a)
 }
 
 /// 照字体库答 [`Catalog`]：有没有中文要读字体，读要可变的字体库，所以包一层。

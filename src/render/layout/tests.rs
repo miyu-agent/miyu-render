@@ -1,0 +1,188 @@
+//! 排一块：标题比正文高、代码块和引用留空、列表一层层往里缩、任务项有勾选框且字让开、分割线、行内代码带记号、粗体要粗字形、
+//! 链接是强调色、删除线是淡字、表格先写成一行一行的字。
+
+use std::path::Path;
+
+use cosmic_text::FontSystem;
+use cosmic_text::fontdb::Database;
+
+use super::*;
+use crate::markdown::blocks;
+use crate::theme::Theme;
+
+fn system() -> FontSystem {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fonts");
+    let mut database = Database::new();
+    for file in ["cjk.otf", "mono.ttf", "mono-cjk.otf"] {
+        database.load_font_file(dir.join(file)).expect("读得出");
+    }
+    FontSystem::new_with_locale_and_db("zh-CN".into(), database)
+}
+
+fn look() -> Look<'static> {
+    Look {
+        palette: Theme::Paper.palette(),
+        size: 36.0,
+        body: "Miyu Test CJK",
+        code: "Miyu Test Mono",
+    }
+}
+
+/// 排 `markdown` 的每一块。
+fn laid(markdown: &str) -> Vec<Laid> {
+    let mut system = system();
+    blocks(markdown)
+        .iter()
+        .map(|block| lay(&mut system, block, &look()))
+        .collect()
+}
+
+/// 一块里所有字形。
+fn glyphs(laid: &Laid) -> Vec<cosmic_text::LayoutGlyph> {
+    laid.buffer
+        .iter()
+        .flat_map(|buffer| buffer.layout_runs().flat_map(|run| run.glyphs.to_vec()))
+        .collect()
+}
+
+#[test]
+fn headings_are_taller_and_bold() {
+    let got = laid("# 你好\n\n你好");
+    assert!(
+        got[0].height > got[1].height,
+        "{} {}",
+        got[0].height,
+        got[1].height
+    );
+    assert!(
+        glyphs(&got[0])
+            .iter()
+            .all(|glyph| glyph.font_weight == Weight::BOLD)
+    );
+    assert!(got[0].margin.0 > got[1].margin.0, "一级标题上面空得多");
+}
+
+#[test]
+fn code_and_quotes_leave_room_around_their_text() {
+    let got = laid("```\ncode\n```\n\n> 你好\n\n你好");
+    let (code, quote, plain) = (&got[0], &got[1], &got[2]);
+    assert_eq!(code.inset, CODE_PAD);
+    assert!(code.height >= CODE_PAD.1 * 2 + 30, "{}", code.height);
+    assert_eq!(quote.inset, (QUOTE.1, QUOTE.2));
+    assert_eq!(quote.height, plain.height + QUOTE.2 * 2);
+}
+
+#[test]
+fn lists_indent_by_depth_and_tasks_get_a_box() {
+    let got = laid("- 一\n  - 二\n- [x] 好了\n");
+    assert_eq!(got[0].inset.0, 0);
+    assert_eq!(got[1].inset.0, 36);
+    let (done, (x, _), side) = got[2].task.expect("有勾选框");
+    assert!(done);
+    assert_eq!(x, 0);
+    assert!(got[2].inset.0 > side, "字让开勾选框");
+    assert!(got[0].task.is_none());
+}
+
+#[test]
+fn a_rule_has_no_text() {
+    let got = laid("---");
+    assert_eq!(
+        (got[0].kind, got[0].buffer.is_none(), got[0].height),
+        (Kind::Rule, true, 36)
+    );
+}
+
+#[test]
+fn inline_styles_reach_the_glyphs() {
+    let got = laid("你 `code` **好** [是](https://a.invalid) ~~的~~");
+    let all = glyphs(&got[0]);
+    let palette = Theme::Paper.palette();
+    let colour = |rgba: [u8; 4]| cosmic_text::Color::rgba(rgba[0], rgba[1], rgba[2], rgba[3]);
+    assert_eq!(
+        all.iter()
+            .filter(|glyph| glyph.metadata == INLINE_CODE)
+            .count(),
+        4,
+        "行内代码四个字形带记号"
+    );
+    assert!(
+        all.iter().any(|glyph| glyph.font_weight == Weight::BOLD),
+        "粗体"
+    );
+    assert!(
+        all.iter()
+            .any(|glyph| glyph.color_opt == Some(colour(palette.accent))),
+        "链接是强调色"
+    );
+    assert!(
+        all.iter()
+            .any(|glyph| glyph.color_opt == Some(colour(palette.muted))),
+        "删除线是淡字"
+    );
+}
+
+#[test]
+fn tables_are_written_row_by_row_for_now() {
+    let got = laid("| 你 | 好 |\n|--|--|\n| 是 | 的 |\n");
+    let text: String = got[0]
+        .buffer
+        .as_ref()
+        .expect("有字")
+        .lines
+        .iter()
+        .map(|line| line.text().to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert_eq!(text, "你 | 好\n是 | 的");
+}
+
+#[test]
+fn chinese_in_code_uses_the_body_font() {
+    // 等宽字体自带中文（这台机器上的 JetBrains Maple Mono 就是）：中文照样用正文的字体。
+    let mut system = system();
+    let look = Look {
+        code: "Miyu Test Mono CJK",
+        ..look()
+    };
+    let got: Vec<Laid> = blocks("`代码 code`\n\n```\n你 x\n```")
+        .iter()
+        .map(|block| lay(&mut system, block, &look))
+        .collect();
+    let mut seen = Vec::new();
+    for laid in &got {
+        for run in laid.buffer.as_ref().expect("有字").layout_runs() {
+            for glyph in run.glyphs {
+                let ch = run.text[glyph.start..glyph.end]
+                    .chars()
+                    .next()
+                    .expect("有字");
+                if ch.is_whitespace() {
+                    continue;
+                }
+                let family = system
+                    .db()
+                    .face(glyph.font_id)
+                    .map(|face| face.families[0].0.clone())
+                    .unwrap_or_default();
+                seen.push((ch, family, glyph.metadata));
+            }
+        }
+    }
+    let cjk = "Miyu Test CJK".to_string();
+    let mono = "Miyu Test Mono CJK".to_string();
+    assert_eq!(
+        seen,
+        [
+            ('代', cjk.clone(), INLINE_CODE),
+            ('码', cjk.clone(), INLINE_CODE),
+            ('c', mono.clone(), INLINE_CODE),
+            ('o', mono.clone(), INLINE_CODE),
+            ('d', mono.clone(), INLINE_CODE),
+            ('e', mono.clone(), INLINE_CODE),
+            ('你', cjk, 0),
+            ('x', mono, 0),
+        ],
+        "中日韩字用正文字体、照样垫代码的底；代码块不垫"
+    );
+}

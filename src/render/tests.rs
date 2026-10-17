@@ -1,5 +1,5 @@
 //! 画一页：用仓库里的测试字体（AGENTS.md 第 4 条）。挑到的西文字体不含中文的换成有中文的；画出来的宽高、底色、字的颜色在
-//! 页面上、整页不透明（叠上去，不盖）；字多了页面变高；三套主题的底不一样；字体库里没有中文的报错。
+//! 页面上、整页不透明（叠上去，不盖）；代码块、引用、分割线、勾选框各用各的颜色；没有粗体的字体假装加粗；段和段之间有空；字多了页面变高；三套主题的底不一样；字体库里没有中文的报错。
 
 use std::path::Path;
 
@@ -148,4 +148,70 @@ fn colour_is_laid_over_the_page_by_its_opacity() {
     let mut pixel = image::Rgba([200, 100, 0, 255]);
     paint::over(&mut pixel, [0, 200, 255, 128]);
     assert_eq!(pixel.0, [100, 150, 128, 255], "一半一半，叠完不透明");
+}
+
+/// 和 `color` 一模一样（三个通道）的像素有几个。
+fn exactly(image: &image::RgbaImage, color: [u8; 4]) -> usize {
+    image
+        .pixels()
+        .filter(|pixel| pixel.0[..3] == color[..3])
+        .count()
+}
+
+#[test]
+fn decorations_take_their_colours() {
+    let mut engine = engine();
+    let palette = Theme::Paper.palette();
+    let plain = decoded(&engine.render("你好", &style(Theme::Paper)));
+    let chip = decoded(&engine.render("你 `code` 好", &style(Theme::Paper)));
+    assert!(exactly(&chip, palette.code) > 500, "行内代码的底");
+    let got = decoded(&engine.render(
+        "```\ncode\n```\n\n> 引用\n\n---\n\n- [x] 好\n",
+        &style(Theme::Paper),
+    ));
+    assert!(exactly(&got, palette.code) > 960 * 60, "代码块的底");
+    assert!(exactly(&got, palette.quote()) > 960 * 30, "引用的底");
+    assert!(exactly(&got, palette.muted) > 6 * 40, "引用的竖条");
+    assert!(exactly(&got, palette.line) >= 960 * 2, "分割线");
+    assert!(exactly(&got, palette.accent) > 100, "做完的勾选框");
+    for colour in [palette.code, palette.quote(), palette.accent] {
+        assert!(
+            exactly(&plain, colour) < 50,
+            "只有字的页面几乎没有这些颜色（字边上偶尔撞上一两个）：{colour:?}"
+        );
+    }
+}
+
+/// 不是底色的像素有几个（墨）。
+fn ink(image: &image::RgbaImage, background: [u8; 4]) -> usize {
+    image
+        .pixels()
+        .filter(|pixel| pixel.0[..3] != background[..3])
+        .count()
+}
+
+#[test]
+fn bold_without_a_bold_face_is_drawn_heavier() {
+    // 测试字体只有常规体：粗体错开一点再画一遍。
+    let mut engine = engine();
+    let palette = Theme::Paper.palette();
+    let regular = ink(
+        &decoded(&engine.render("这个群里说话", &style(Theme::Paper))),
+        palette.background,
+    );
+    let bold = ink(
+        &decoded(&engine.render("**这个群里说话**", &style(Theme::Paper))),
+        palette.background,
+    );
+    assert!(bold * 10 > regular * 11, "{bold} {regular}");
+}
+
+#[test]
+fn paragraphs_are_set_apart() {
+    let mut engine = engine();
+    let lines = "这\n个\n群\n里\n说\n话\n的".to_string();
+    let apart = "这\n\n个\n\n群\n\n里\n\n说\n\n话\n\n的".to_string();
+    let joined = engine.render(&lines, &style(Theme::Paper)).height;
+    let split = engine.render(&apart, &style(Theme::Paper)).height;
+    assert!(split > joined + 6 * 6, "{split} {joined}");
 }

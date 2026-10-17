@@ -1,6 +1,7 @@
 //! miyu-render：Miyu 的渲染软件包（核心仓库设计 36）。核心照清单 `[process] args = ["serve"]` 拉起，标准输入输出上说协议。
 
 mod fonts;
+mod markdown;
 mod methods;
 mod render;
 mod settings;
