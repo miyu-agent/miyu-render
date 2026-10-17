@@ -274,3 +274,33 @@ fn a_split_paragraph_continues_at_the_top_of_the_next_column() {
         .count();
     assert!(ink > 300, "第二栏一开头就接着前一栏的字：{ink}");
 }
+
+#[test]
+fn a_diagram_sits_on_the_page_and_a_broken_one_shows_its_source() {
+    let mut engine = engine();
+    let palette = Theme::Dark.palette();
+    let image = decoded(&one(
+        &mut engine,
+        "```mermaid\ngraph TD\n  A[你好] --> B[世界]\n```",
+        &style(Theme::Dark),
+    ));
+    assert!(exactly(&image, palette.quote()) > 1000, "节点的底");
+    assert!(image.pixels().all(|pixel| pixel.0[3] == 255), "整页不透明");
+    assert!(
+        image
+            .pixels()
+            .filter(|pixel| pixel.0[..3].iter().all(|channel| *channel > 240))
+            .count()
+            == 0,
+        "深色页面上没有白块"
+    );
+    let broken = decoded(&one(
+        &mut engine,
+        "```mermaid\ngraph TD\n  A -->\n```",
+        &style(Theme::Dark),
+    ));
+    assert!(
+        exactly(&broken, palette.code) > 960 * 40,
+        "画不出来的照代码块画"
+    );
+}

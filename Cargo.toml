@@ -21,6 +21,10 @@ base64 = "0.22"
 pulldown-cmark = { version = "0.13.4", default-features = false }
 # 排字、画字形（同旧版）：字体库 fontdb 随它来，`cosmic_text::fontdb`。
 cosmic-text = { version = "0.19.0", default-features = false, features = ["std", "swash"] }
+# mermaid（设计 36 第四节第 2 条，同旧版）：出 SVG，配色照页面；不要它的命令行和它自己出 PNG 的那一套。
+mermaid-rs-renderer = { version = "0.3", default-features = false }
+# SVG 画成透明的图（同旧版）：字体库和排字共用一份（同一个 fontdb 版本），不另扫系统字体。
+resvg = { version = "0.47", default-features = false, features = ["text"] }
 # 画布和 PNG：只开 PNG。
 image = { version = "0.25", default-features = false, features = ["png"] }
 

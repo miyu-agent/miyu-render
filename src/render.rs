@@ -5,6 +5,7 @@
 //! - 字形照透明度叠到页面上（[`paint`]），不盖像素：mermaid、公式以后也照这一条叠（设计 36 第四节第 2 条）。
 
 mod columns;
+mod diagram;
 mod draw;
 mod layout;
 mod pages;
@@ -14,6 +15,7 @@ mod table;
 mod units;
 
 use std::cell::RefCell;
+use std::sync::Arc;
 
 use cosmic_text::fontdb::{Database, Family, Query};
 use cosmic_text::{FontSystem, SwashCache, Weight};
@@ -59,6 +61,8 @@ pub struct Engine {
     system: FontSystem,
     cache: SwashCache,
     families: Families,
+    /// 字体库的一份（mermaid 图的字用：resvg 和排字是同一个 fontdb）。
+    fonts: Arc<Database>,
 }
 
 impl Engine {
@@ -74,10 +78,12 @@ impl Engine {
     ) -> Result<Engine, FontError> {
         let mut system = FontSystem::new_with_locale_and_db("zh-CN".to_string(), database);
         let families = fonts::resolve(&Live(RefCell::new(&mut system)), body, code, generic)?;
+        let fonts = Arc::new(system.db().clone());
         Ok(Engine {
             system,
             cache: SwashCache::new(),
             families,
+            fonts,
         })
     }
 
@@ -101,6 +107,7 @@ impl Engine {
             body: &self.families.body,
             code: &self.families.code,
             emoji: self.families.emoji.as_deref(),
+            fonts: &self.fonts,
         };
         let laid: Vec<layout::Laid> = crate::markdown::blocks(markdown)
             .iter()

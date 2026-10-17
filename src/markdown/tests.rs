@@ -176,3 +176,18 @@ fn nothing_to_draw_is_no_block() {
     assert!(blocks("\n\n  \n").is_empty());
     assert!(blocks("<!-- 只有注释 -->").is_empty());
 }
+
+#[test]
+fn mermaid_fences_are_diagrams() {
+    let got = shape(
+        "```mermaid\ngraph TD\nA-->B\n```\n\n```Mermaid title\nx\n```\n\n```rust\nfn x() {}\n```",
+    );
+    assert_eq!(
+        got,
+        [
+            (Kind::Diagram, "graph TD\nA-->B\n".into()),
+            (Kind::Diagram, "x\n".into()),
+            (Kind::Code, "fn x() {}\n".into())
+        ]
+    );
+}

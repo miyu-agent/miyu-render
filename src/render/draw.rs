@@ -53,6 +53,15 @@ pub fn block(
         ),
         _ => {}
     }
+    if let Some(image_of) = laid.image.as_ref() {
+        // mermaid 图：居中，照透明度叠上去（图的底就是页面）。
+        let x = left + COLUMN.saturating_sub(image_of.width()) / 2;
+        for (dx, dy, pixel) in image_of.enumerate_pixels() {
+            if let Some(target) = image.get_pixel_mut_checked(x + dx, top + dy) {
+                paint::over(target, pixel.0);
+            }
+        }
+    }
     if let Some(grid) = laid.grid.as_ref() {
         table(image, system, cache, grid, (left, top), palette);
     }

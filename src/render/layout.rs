@@ -7,11 +7,15 @@
 //! - 行内代码的字形带一个记号（`INLINE_CODE`），画的时候在下面垫一块代码的底。
 //! - 每个字用哪一类字体（代码里的中日韩字、表情）在 `script`。
 
-use cosmic_text::fontdb::Family;
+use std::sync::Arc;
+
+use cosmic_text::fontdb::{Database, Family};
 use cosmic_text::{
     Align, Attrs, Buffer, Color, FontSystem, Metrics, Shaping, Style as FontStyle, Weight, Wrap,
 };
+use image::RgbaImage;
 
+use super::diagram;
 use super::script::{self, Script};
 use super::table::{self, Grid};
 use super::{COLUMN, units};
@@ -48,6 +52,8 @@ pub struct Look<'a> {
     pub code: &'a str,
     /// 彩色表情字体，字体库里没有的是空的（照正文字体排）。
     pub emoji: Option<&'a str>,
+    /// 字体库（画 mermaid 图的字用，R-3）。
+    pub fonts: &'a Arc<Database>,
 }
 
 /// 排好的一块。
@@ -68,10 +74,21 @@ pub struct Laid {
     pub grid: Option<Grid>,
     /// 能从哪里断开（分栏，R-2 下）：每一行字、表格每一行的底离这一块顶多远，照先后，最后一个就是整块的高。
     pub breaks: Vec<u32>,
+    /// mermaid 画好的图（R-3）：透明的，叠到页面上。
+    pub image: Option<RgbaImage>,
 }
 
-/// 排一块。
+/// 排一块。mermaid 图先画成图，画不出来的照代码块排（源码照样看得到）。
 pub fn lay(system: &mut FontSystem, block: &Block, look: &Look) -> Laid {
+    if block.kind == Kind::Diagram {
+        return figure(block, look).unwrap_or_else(|| {
+            let code = Block {
+                kind: Kind::Code,
+                ..block.clone()
+            };
+            lay(system, &code, look)
+        });
+    }
     let size = look.size;
     let small = units::ceil((size / 4.0).max(6.0));
     let font = units::ceil(size);
@@ -84,7 +101,7 @@ pub fn lay(system: &mut FontSystem, block: &Block, look: &Look) -> Laid {
             CODE_PAD.1,
             CODE_PAD.0,
         ),
-        Kind::Table | Kind::Rule => ((font / 2, font / 2), (0, 0), 0, 0),
+        Kind::Table | Kind::Rule | Kind::Diagram => ((font / 2, font / 2), (0, 0), 0, 0),
         Kind::Quote => ((small, small), (QUOTE.1, QUOTE.2), QUOTE.2, QUOTE.1 / 2),
         Kind::Item { depth } => (
             (small / 2, small / 2),
@@ -99,21 +116,7 @@ pub fn lay(system: &mut FontSystem, block: &Block, look: &Look) -> Laid {
         .as_ref()
         .and_then(|found| table::lay(system, found, look))
     {
-        // 表格照行断；最后一行的底换成整张表的高（连最下面一条线）。
-        let mut breaks: Vec<u32> = grid.rows.iter().map(|row| row.top + row.height).collect();
-        if let Some(last) = breaks.last_mut() {
-            *last = grid.height;
-        }
-        return Laid {
-            kind: block.kind,
-            buffer: None,
-            inset,
-            height: grid.height,
-            margin,
-            task: None,
-            breaks,
-            grid: Some(grid),
-        };
+        return gridded(block.kind, grid, margin);
     }
     if block.kind == Kind::Rule {
         return Laid {
@@ -125,6 +128,7 @@ pub fn lay(system: &mut FontSystem, block: &Block, look: &Look) -> Laid {
             task: None,
             grid: None,
             breaks: vec![font],
+            image: None,
         };
     }
     let line = units::ceil(size * LINE_HEIGHT);
@@ -161,7 +165,45 @@ pub fn lay(system: &mut FontSystem, block: &Block, look: &Look) -> Laid {
         task,
         grid: None,
         breaks,
+        image: None,
     }
+}
+
+/// 排好的表格：照行断，最后一行的底换成整张表的高（连最下面一条线）。
+fn gridded(kind: Kind, grid: Grid, margin: (u32, u32)) -> Laid {
+    let mut breaks: Vec<u32> = grid.rows.iter().map(|row| row.top + row.height).collect();
+    if let Some(last) = breaks.last_mut() {
+        *last = grid.height;
+    }
+    Laid {
+        kind,
+        buffer: None,
+        inset: (0, 0),
+        height: grid.height,
+        margin,
+        task: None,
+        breaks,
+        grid: Some(grid),
+        image: None,
+    }
+}
+
+/// mermaid 图画成图：画不出来的交回空的。
+fn figure(block: &Block, look: &Look) -> Option<Laid> {
+    let source: String = block.spans.iter().map(|span| span.text.as_str()).collect();
+    let image = diagram::draw(&source, &look.palette, look.body, look.fonts, COLUMN)?;
+    let (font, height) = (units::ceil(look.size), image.height());
+    Some(Laid {
+        kind: block.kind,
+        buffer: None,
+        inset: (0, 0),
+        height,
+        margin: (font / 2, font / 2),
+        task: None,
+        grid: None,
+        breaks: vec![height],
+        image: Some(image),
+    })
 }
 
 /// 排字：每一段字照它的样子挑字体、颜色、字号。

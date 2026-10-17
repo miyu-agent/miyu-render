@@ -7,6 +7,10 @@ use cosmic_text::FontSystem;
 use cosmic_text::fontdb::Database;
 
 use super::*;
+
+/// 画 mermaid 图用的字体库：这里的测试不画图，空的就够。
+static FONTS: std::sync::LazyLock<std::sync::Arc<Database>> =
+    std::sync::LazyLock::new(|| std::sync::Arc::new(Database::new()));
 use crate::markdown::blocks;
 use crate::theme::Theme;
 
@@ -26,6 +30,7 @@ fn look() -> Look<'static> {
         body: "Miyu Test CJK",
         code: "Miyu Test Mono",
         emoji: None,
+        fonts: &FONTS,
     }
 }
 

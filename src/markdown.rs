@@ -5,6 +5,7 @@
 //!   （[`collect`]）。正文里直接贴的地址也上链接色，行内代码里的不碰（[`links`]）。
 //! - 夹着的 HTML：`<br>` 换行，`<b>`、`<i>`、`<s>`、`<code>` 换成样式，别的标签只留字，注释不要（[`html`]）。
 //! - 删除线画成淡字（旧版同）。表头一律加粗。
+//! - 语言写着 `mermaid` 的围栏是图（[`Kind::Diagram`]），字是源码。
 //!
 //! 只读出要画什么，怎么画在 `render` 里。
 
@@ -28,6 +29,8 @@ pub enum Kind {
     Quote,
     /// 代码块：字原样。
     Code,
+    /// mermaid 图（R-3）：字是图的源码；画不出来的照代码块画。
+    Diagram,
     /// 表格：字在 [`Block::table`] 里。
     Table,
     /// 分割线。
@@ -138,7 +141,7 @@ impl Block {
 pub fn blocks(markdown: &str) -> Vec<Block> {
     let mut blocks = collect::collect(markdown);
     for block in &mut blocks {
-        if block.kind == Kind::Code {
+        if matches!(block.kind, Kind::Code | Kind::Diagram) {
             continue;
         }
         links::mark(&mut block.spans);

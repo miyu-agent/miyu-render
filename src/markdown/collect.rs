@@ -1,7 +1,7 @@
 //! 照 pulldown-cmark 的事件一块一块收（旧版 `MarkdownCollector`）。列表项的记号写进字里（`• `、`3. `，同一项的第二段缩进四个
 //! 空格）；任务项去掉 `• `、记下做没做完；引用、列表可以套几层，只记最里面那一种；公式先照行内代码画（R-4 起画成公式）。
 
-use pulldown_cmark::{Alignment, Event, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{Alignment, CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 
 use super::html::{self, Piece};
 use super::{Align, Block, Kind, Span, Style, Table};
@@ -138,10 +138,12 @@ impl Collector {
                 self.finish_current();
                 self.quotes += 1;
             }
-            Tag::CodeBlock(_) => {
+            Tag::CodeBlock(kind) => {
                 self.finish_current();
                 self.code = true;
-                self.current = Some(Block::new(Kind::Code));
+                let diagram =
+                    matches!(&kind, CodeBlockKind::Fenced(language) if is_mermaid(language));
+                self.current = Some(Block::new(if diagram { Kind::Diagram } else { Kind::Code }));
             }
             Tag::List(start) => {
                 self.finish_current();
@@ -402,4 +404,12 @@ fn same_target(url: &str, shown: &str) -> bool {
             url.strip_prefix(scheme)
                 .is_some_and(|rest| rest.trim_end_matches('/') == shown.trim_end_matches('/'))
         })
+}
+
+/// 围栏的语言是不是 mermaid：只看第一个词，大小写不论（```` ```mermaid title ````）。
+fn is_mermaid(language: &str) -> bool {
+    language
+        .split_whitespace()
+        .next()
+        .is_some_and(|word| word.eq_ignore_ascii_case("mermaid"))
 }
