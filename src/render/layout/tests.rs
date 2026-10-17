@@ -189,3 +189,19 @@ fn emoji_in_a_heading_stay_regular() {
     assert_eq!(weights.first(), Some(&Weight::BOLD));
     assert_eq!(weights.last(), Some(&Weight::NORMAL), "{weights:?}");
 }
+
+#[test]
+fn a_formula_that_cannot_be_drawn_falls_back_to_unicode_text() {
+    let got = laid("$$x^2 + \\frac{a}$$");
+    assert_eq!(got[0].kind, Kind::Paragraph);
+    let text: String = got[0]
+        .buffer
+        .as_ref()
+        .expect("有字")
+        .lines
+        .iter()
+        .map(|line| line.text().to_string())
+        .collect();
+    assert_eq!(text, crate::markdown::math::unicode("x^2 + \\frac{a}"));
+    assert!(text.starts_with("x²"), "{text}");
+}

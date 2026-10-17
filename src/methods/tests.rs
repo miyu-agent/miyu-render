@@ -162,7 +162,9 @@ fn registered_names_and_unknown_methods() {
 
 #[test]
 fn a_long_reply_comes_back_as_several_pages() {
-    let (state, fake) = setup(false, &["cjk.otf"]);
+    let (mut state, fake) = setup(false, &["cjk.otf"]);
+    // 测的是分页，不是限时：调试版编出来的慢，和别的测试一起跑时撞得上 30 秒。
+    state.limit = Duration::from_mins(5);
     let long = "这个群里说话的时候长回复会转成图。\n\n".repeat(400);
     let answer = markdown(&state, &json!({ "markdown": long })).expect("画得出");
     let pages = answer["pages"].as_array().expect("几页");

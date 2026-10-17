@@ -15,10 +15,10 @@ use cosmic_text::{
 };
 use image::RgbaImage;
 
-use super::diagram;
 use super::script::{self, Script};
 use super::table::{self, Grid};
 use super::{COLUMN, units};
+use super::{diagram, formula};
 use crate::markdown::{Block, Kind, Span, Style};
 use crate::theme::Palette;
 
@@ -80,14 +80,8 @@ pub struct Laid {
 
 /// 排一块。mermaid 图先画成图，画不出来的照代码块排（源码照样看得到）。
 pub fn lay(system: &mut FontSystem, block: &Block, look: &Look) -> Laid {
-    if block.kind == Kind::Diagram {
-        return figure(block, look).unwrap_or_else(|| {
-            let code = Block {
-                kind: Kind::Code,
-                ..block.clone()
-            };
-            lay(system, &code, look)
-        });
+    if matches!(block.kind, Kind::Diagram | Kind::Formula) {
+        return figure(block, look).unwrap_or_else(|| lay(system, &fallback(block), look));
     }
     let size = look.size;
     let small = units::ceil((size / 4.0).max(6.0));
@@ -101,7 +95,9 @@ pub fn lay(system: &mut FontSystem, block: &Block, look: &Look) -> Laid {
             CODE_PAD.1,
             CODE_PAD.0,
         ),
-        Kind::Table | Kind::Rule | Kind::Diagram => ((font / 2, font / 2), (0, 0), 0, 0),
+        Kind::Table | Kind::Rule | Kind::Diagram | Kind::Formula => {
+            ((font / 2, font / 2), (0, 0), 0, 0)
+        }
         Kind::Quote => ((small, small), (QUOTE.1, QUOTE.2), QUOTE.2, QUOTE.1 / 2),
         Kind::Item { depth } => (
             (small / 2, small / 2),
@@ -188,10 +184,34 @@ fn gridded(kind: Kind, grid: Grid, margin: (u32, u32)) -> Laid {
     }
 }
 
-/// mermaid 图画成图：画不出来的交回空的。
+/// 画不出来的图换成什么排：mermaid 照代码块（源码照样看得到），公式照 Unicode 写法的段落。
+fn fallback(block: &Block) -> Block {
+    if block.kind == Kind::Formula {
+        let tex: String = block.spans.iter().map(|span| span.text.as_str()).collect();
+        let span = Span {
+            text: crate::markdown::math::unicode(&tex),
+            style: Style::default(),
+        };
+        return Block {
+            kind: Kind::Paragraph,
+            spans: vec![span],
+            ..block.clone()
+        };
+    }
+    Block {
+        kind: Kind::Code,
+        ..block.clone()
+    }
+}
+
+/// mermaid 图、公式画成图：画不出来的交回空的。
 fn figure(block: &Block, look: &Look) -> Option<Laid> {
     let source: String = block.spans.iter().map(|span| span.text.as_str()).collect();
-    let image = diagram::draw(&source, &look.palette, look.body, look.fonts, COLUMN)?;
+    let image = if block.kind == Kind::Formula {
+        formula::draw(&source, look.palette.text, look.size, COLUMN)?
+    } else {
+        diagram::draw(&source, &look.palette, look.body, look.fonts, COLUMN)?
+    };
     let (font, height) = (units::ceil(look.size), image.height());
     Some(Laid {
         kind: block.kind,

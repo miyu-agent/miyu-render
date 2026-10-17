@@ -191,3 +191,16 @@ fn mermaid_fences_are_diagrams() {
         ]
     );
 }
+
+#[test]
+fn formulas_stand_alone_or_turn_into_unicode_inline() {
+    let got = shape("能量 $E=mc^2$ 守恒\n\n$$\\frac{a}{b}$$\n\n下一段");
+    assert_eq!(
+        got,
+        [
+            (Kind::Paragraph, "能量 E=mc² 守恒".into()),
+            (Kind::Formula, "\\frac{a}{b}".into()),
+            (Kind::Paragraph, "下一段".into()),
+        ]
+    );
+}

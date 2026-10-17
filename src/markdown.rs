@@ -6,12 +6,14 @@
 //! - 夹着的 HTML：`<br>` 换行，`<b>`、`<i>`、`<s>`、`<code>` 换成样式，别的标签只留字，注释不要（[`html`]）。
 //! - 删除线画成淡字（旧版同）。表头一律加粗。
 //! - 语言写着 `mermaid` 的围栏是图（[`Kind::Diagram`]），字是源码。
+//! - 公式：独占一行的 `$$…$$` 自成一块（[`Kind::Formula`]），行内的 `$…$` 换成 Unicode 写法（[`math`]）。
 //!
 //! 只读出要画什么，怎么画在 `render` 里。
 
 mod collect;
 mod html;
 mod links;
+pub mod math;
 
 /// 一块是什么。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,6 +33,8 @@ pub enum Kind {
     Code,
     /// mermaid 图（R-3）：字是图的源码；画不出来的照代码块画。
     Diagram,
+    /// 独占一行的公式 `$$…$$`（R-4）：字是 TeX 源码；画不出来的照 Unicode 写法排。
+    Formula,
     /// 表格：字在 [`Block::table`] 里。
     Table,
     /// 分割线。
@@ -141,7 +145,7 @@ impl Block {
 pub fn blocks(markdown: &str) -> Vec<Block> {
     let mut blocks = collect::collect(markdown);
     for block in &mut blocks {
-        if matches!(block.kind, Kind::Code | Kind::Diagram) {
+        if matches!(block.kind, Kind::Code | Kind::Diagram | Kind::Formula) {
             continue;
         }
         links::mark(&mut block.spans);

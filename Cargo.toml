@@ -25,6 +25,11 @@ cosmic-text = { version = "0.19.0", default-features = false, features = ["std",
 mermaid-rs-renderer = { version = "0.3", default-features = false }
 # SVG 画成透明的图（同旧版）：字体库和排字共用一份（同一个 fontdb 版本），不另扫系统字体。
 resvg = { version = "0.47", default-features = false, features = ["text"] }
+# 公式（设计 36 第四节第 4 条，旧版终端在用）：纯 Rust 的 LaTeX，KaTeX 的字体编进程序，不靠系统装了什么。
+ratex-parser = "0.1.14"
+ratex-layout = "0.1.14"
+ratex-types = "0.1.14"
+ratex-render = { version = "0.1.14", features = ["embed-fonts"] }
 # 画布和 PNG：只开 PNG。
 image = { version = "0.25", default-features = false, features = ["png"] }
 

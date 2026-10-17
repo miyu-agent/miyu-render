@@ -304,3 +304,20 @@ fn a_diagram_sits_on_the_page_and_a_broken_one_shows_its_source() {
         "画不出来的照代码块画"
     );
 }
+
+#[test]
+fn a_formula_is_drawn_in_the_text_colour_and_a_broken_one_falls_back() {
+    let mut engine = engine();
+    let palette = Theme::Dark.palette();
+    let drawn = decoded(&one(
+        &mut engine,
+        "$$\\int_0^1 x^2\\,dx = \\frac{1}{3}$$",
+        &style(Theme::Dark),
+    ));
+    assert!(exactly(&drawn, palette.text) > 100, "公式照正文的颜色");
+    assert!(drawn.pixels().all(|pixel| pixel.0[3] == 255), "整页不透明");
+    let broken = engine
+        .render("$$\\frac{a}{$$", &style(Theme::Dark))
+        .expect("画得了");
+    assert_eq!(broken.len(), 1, "写坏的照 Unicode 写法排，不报错");
+}

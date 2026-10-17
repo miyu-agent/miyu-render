@@ -1,5 +1,5 @@
 //! 照 pulldown-cmark 的事件一块一块收（旧版 `MarkdownCollector`）。列表项的记号写进字里（`• `、`3. `，同一项的第二段缩进四个
-//! 空格）；任务项去掉 `• `、记下做没做完；引用、列表可以套几层，只记最里面那一种；公式先照行内代码画（R-4 起画成公式）。
+//! 空格）；任务项去掉 `• `、记下做没做完；引用、列表可以套几层，只记最里面那一种；独占一行的公式自成一块，行内的换成 Unicode 写法（R-4）。
 
 use pulldown_cmark::{Alignment, CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 
@@ -80,12 +80,22 @@ impl Collector {
                     .is_some_and(|(url, _)| same_target(url.trim(), text.trim()));
                 self.push_text(&text, style);
             }
-            Event::Code(text) | Event::InlineMath(text) | Event::DisplayMath(text) => {
+            Event::Code(text) => {
                 let style = Style {
                     code: true,
                     ..self.style()
                 };
                 self.push_text(&text, style);
+            }
+            Event::InlineMath(text) => self.push_text(&super::math::unicode(&text), self.style()),
+            Event::DisplayMath(text) => {
+                // 独占一行的公式自成一块，后面的字接着开新的一段。
+                self.finish_current();
+                let mut block = Block::new(Kind::Formula);
+                block.push(text.trim(), Style::default());
+                if block.has_content() {
+                    self.blocks.push(block);
+                }
             }
             Event::SoftBreak | Event::HardBreak if self.breaks > 0 => {}
             Event::SoftBreak | Event::HardBreak => self.push_text("\n", self.style()),
