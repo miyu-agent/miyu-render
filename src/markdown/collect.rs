@@ -151,9 +151,16 @@ impl Collector {
             Tag::CodeBlock(kind) => {
                 self.finish_current();
                 self.code = true;
-                let diagram =
-                    matches!(&kind, CodeBlockKind::Fenced(language) if is_mermaid(language));
-                self.current = Some(Block::new(if diagram { Kind::Diagram } else { Kind::Code }));
+                let language = match &kind {
+                    CodeBlockKind::Fenced(language) => {
+                        language.split_whitespace().next().map(str::to_string)
+                    }
+                    CodeBlockKind::Indented => None,
+                };
+                let diagram = language.as_deref().is_some_and(is_mermaid);
+                let mut block = Block::new(if diagram { Kind::Diagram } else { Kind::Code });
+                block.language = language;
+                self.current = Some(block);
             }
             Tag::List(start) => {
                 self.finish_current();
@@ -374,6 +381,7 @@ impl Collector {
             code: self.code || self.html.code > 0,
             link: false,
             muted: self.strike > 0 || self.html.strike > 0,
+            token: None,
         }
     }
 

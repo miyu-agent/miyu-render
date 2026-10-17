@@ -114,7 +114,9 @@ fn the_theme_comes_from_the_call_or_the_settings() {
 
 #[test]
 fn wrong_params_are_refused() {
-    let (state, fake) = setup(false, &["cjk.otf"]);
+    let (mut state, fake) = setup(false, &["cjk.otf"]);
+    // 两万个字在 debug 构建里排要二十几秒（release 不到一秒），别让时限误判。
+    state.limit = Duration::from_mins(5);
     let long = "字".repeat(MAX_CHARS + 1);
     for params in [
         json!({}),

@@ -1,5 +1,5 @@
 //! 画一页：用仓库里的测试字体（AGENTS.md 第 4 条）。挑到的西文字体不含中文的换成有中文的；画出来的宽高、底色、字的颜色在
-//! 页面上、整页不透明（叠上去，不盖）；代码块、引用、分割线、勾选框各用各的颜色；没有粗体的字体假装加粗；表格有表头、隔行的底和格子线；段和段之间有空；长的分栏、第二栏有字；字多了页面变高；三套主题的底不一样；字体库里没有中文的报错。
+//! 页面上、整页不透明（叠上去，不盖）；代码块、引用、分割线、勾选框各用各的颜色；没有粗体的字体假装加粗；表格有表头、隔行的底和格子线；段和段之间有空；长的分栏、第二栏有字；字多了页面变高；三套主题的底不一样；字体库里没有中文的报错；认得出语言的代码照配色着色，认不出的单色。
 
 use std::path::Path;
 
@@ -320,4 +320,32 @@ fn a_formula_is_drawn_in_the_text_colour_and_a_broken_one_falls_back() {
         .render("$$\\frac{a}{$$", &style(Theme::Dark))
         .expect("画得了");
     assert_eq!(broken.len(), 1, "写坏的照 Unicode 写法排，不报错");
+}
+
+#[test]
+fn code_in_a_known_language_is_coloured_from_the_palette() {
+    let mut engine = engine();
+    let palette = Theme::Paper.palette();
+    let source = "fn main() {\n    let word = \"hello\"; // note\n    let n = 42;\n}";
+    let coloured = decoded(&one(
+        &mut engine,
+        &format!("```rust\n{source}\n```"),
+        &style(Theme::Paper),
+    ));
+    for (name, colour) in [
+        ("关键字", palette.accent),
+        ("字符串", palette.code_string()),
+        ("数", palette.code_constant()),
+        ("函数名", palette.code_function()),
+        ("注释", palette.muted),
+    ] {
+        assert!(near(&coloured, colour) > 20, "{name}");
+    }
+    let plain = decoded(&one(
+        &mut engine,
+        &format!("```not-a-language\n{source}\n```"),
+        &style(Theme::Paper),
+    ));
+    assert_eq!(near(&plain, palette.code_string()), 0, "认不出的照单色");
+    assert!(near(&plain, palette.text) > 100);
 }

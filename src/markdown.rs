@@ -58,6 +58,23 @@ pub struct Style {
     pub link: bool,
     /// 淡字：删除线。
     pub muted: bool,
+    /// 代码块里这一段是哪一类（R-5 代码着色）：读的时候都是空的，排的时候认出语言才填。
+    pub token: Option<Token>,
+}
+
+/// 代码里一段字是哪一类（R-5）：颜色照页面的配色调。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Token {
+    /// 关键字、存储类型（`fn`、`let`、`if`）。
+    Keyword,
+    /// 字符串。
+    String,
+    /// 数、`true`、字符。
+    Constant,
+    /// 函数名、类型名。
+    Function,
+    /// 注释。
+    Comment,
 }
 
 /// 一段同样子的字。
@@ -105,6 +122,8 @@ pub struct Block {
     pub table: Option<Table>,
     /// 任务列表的一项：做没做完。
     pub task: Option<bool>,
+    /// 代码块围栏写的语言（第一个词），没写的是空的。
+    pub language: Option<String>,
 }
 
 impl Block {
@@ -114,6 +133,7 @@ impl Block {
             spans: Vec::new(),
             table: None,
             task: None,
+            language: None,
         }
     }
 

@@ -87,6 +87,74 @@ impl Palette {
     }
 }
 
+impl Palette {
+    /// 代码里字符串的颜色：强调色转 130°（蓝的强调色转出来偏绿），亮度、饱和度照强调色。
+    pub fn code_string(&self) -> Rgba {
+        hue(self.accent, 130.0)
+    }
+
+    /// 代码里数、常量的颜色：强调色转 200°（偏橙）。
+    pub fn code_constant(&self) -> Rgba {
+        hue(self.accent, 200.0)
+    }
+
+    /// 代码里函数名、类型名的颜色：强调色转 -60°（偏紫）。
+    pub fn code_function(&self) -> Rgba {
+        hue(self.accent, -60.0)
+    }
+}
+
+/// 色相转 `degrees` 度，亮度、饱和度不变（HSL）。
+pub fn hue([red, green, blue, alpha]: Rgba, degrees: f32) -> Rgba {
+    let (red, green, blue) = (
+        f32::from(red) / 255.0,
+        f32::from(green) / 255.0,
+        f32::from(blue) / 255.0,
+    );
+    let (max, min) = (red.max(green).max(blue), red.min(green).min(blue));
+    let delta = max - min;
+    if delta <= f32::EPSILON {
+        return [channel(red), channel(green), channel(blue), alpha];
+    }
+    let light = f32::midpoint(max, min);
+    let base = if (max - red).abs() <= f32::EPSILON {
+        60.0 * ((green - blue) / delta).rem_euclid(6.0)
+    } else if (max - green).abs() <= f32::EPSILON {
+        60.0 * ((blue - red) / delta + 2.0)
+    } else {
+        60.0 * ((red - green) / delta + 4.0)
+    };
+    // HSL 里色度就是 max - min，转色相不变。
+    let chroma = delta;
+    let turned = (base + degrees).rem_euclid(360.0) / 60.0;
+    let second = chroma * (1.0 - (turned.rem_euclid(2.0) - 1.0).abs());
+    let (one, two, three) = match turned {
+        sector if sector < 1.0 => (chroma, second, 0.0),
+        sector if sector < 2.0 => (second, chroma, 0.0),
+        sector if sector < 3.0 => (0.0, chroma, second),
+        sector if sector < 4.0 => (0.0, second, chroma),
+        sector if sector < 5.0 => (second, 0.0, chroma),
+        _ => (chroma, 0.0, second),
+    };
+    let lift = light - chroma / 2.0;
+    [
+        channel(one + lift),
+        channel(two + lift),
+        channel(three + lift),
+        alpha,
+    ]
+}
+
+/// 0 到 1 换成 0 到 255（四舍五入，先夹在范围里）。
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "先夹在 0 到 255 之间再换"
+)]
+fn channel(value: f32) -> u8 {
+    (value * 255.0).round().clamp(0.0, 255.0) as u8
+}
+
 /// `from` 往 `to` 挪 `percent`（0 到 100，超了照 100）：每个通道各算，四舍五入，不透明度照 `from`。
 pub fn mix(from: Rgba, to: Rgba, percent: u8) -> Rgba {
     let percent = u32::from(percent.min(100));

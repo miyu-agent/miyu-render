@@ -1,5 +1,5 @@
 //! 排一块：标题比正文高、代码块和引用留空、列表一层层往里缩、任务项有勾选框且字让开、分割线、行内代码带记号、粗体要粗字形、
-//! 链接是强调色、删除线是淡字。
+//! 链接是强调色、删除线是淡字；着色的代码照配色、注释是淡字加斜体。
 
 use std::path::Path;
 
@@ -204,4 +204,34 @@ fn a_formula_that_cannot_be_drawn_falls_back_to_unicode_text() {
         .collect();
     assert_eq!(text, crate::markdown::math::unicode("x^2 + \\frac{a}"));
     assert!(text.starts_with("x²"), "{text}");
+}
+
+#[test]
+fn highlighted_code_takes_palette_colours_and_comments_slant() {
+    let got = laid("```rust\nlet n = 1; // hi\n```");
+    let all = glyphs(&got[0]);
+    let palette = Theme::Paper.palette();
+    let colour = |rgba: [u8; 4]| Some(cosmic_text::Color::rgba(rgba[0], rgba[1], rgba[2], rgba[3]));
+    let slanted = |glyph: &&cosmic_text::LayoutGlyph| {
+        glyph
+            .cache_key_flags
+            .contains(cosmic_text::CacheKeyFlags::FAKE_ITALIC)
+    };
+    let comment: Vec<_> = all
+        .iter()
+        .filter(|glyph| glyph.color_opt == colour(palette.muted))
+        .collect();
+    assert_eq!(comment.len(), "// hi".len(), "注释是淡字");
+    assert!(comment.iter().all(slanted), "注释斜");
+    let keyword: Vec<_> = all
+        .iter()
+        .filter(|glyph| glyph.color_opt == colour(palette.accent))
+        .collect();
+    assert!(keyword.len() >= "let".len(), "关键字是强调色");
+    assert!(!keyword.iter().any(slanted), "别的不斜");
+    assert!(
+        all.iter()
+            .any(|glyph| glyph.color_opt == colour(palette.code_constant())),
+        "数"
+    );
 }

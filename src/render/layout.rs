@@ -18,8 +18,8 @@ use image::RgbaImage;
 use super::script::{self, Script};
 use super::table::{self, Grid};
 use super::{COLUMN, units};
-use super::{diagram, formula};
-use crate::markdown::{Block, Kind, Span, Style};
+use super::{diagram, formula, highlight};
+use crate::markdown::{Block, Kind, Span, Style, Token};
 use crate::theme::Palette;
 
 /// 行内代码的字形上带的记号。
@@ -228,7 +228,22 @@ fn figure(block: &Block, look: &Look) -> Option<Laid> {
 
 /// 排字：每一段字照它的样子挑字体、颜色、字号。
 fn shape(system: &mut FontSystem, block: &Block, look: &Look, width: u32) -> Buffer {
-    rich(system, &block.spans, block.kind, look, Some(width), None)
+    // 代码块认得出语言的先切词着色（R-5），认不出的照单色。
+    let coloured = (block.kind == Kind::Code)
+        .then_some(block.language.as_deref())
+        .flatten()
+        .and_then(|language| {
+            let source: String = block.spans.iter().map(|span| span.text.as_str()).collect();
+            highlight::tokens(&source, language)
+        });
+    rich(
+        system,
+        coloured.as_deref().unwrap_or(&block.spans),
+        block.kind,
+        look,
+        Some(width),
+        None,
+    )
 }
 
 /// 一串字排成一块（表格的格子也用它）：`width` 是空的不折行（量一列不折行要多宽），`align` 是这一块怎么对齐。
@@ -291,12 +306,15 @@ fn attrs<'a>(kind: Kind, style: Style, script: Script, look: &Look<'a>) -> Attrs
         Script::Plain if code => look.code,
         Script::Cjk | Script::Plain => look.body,
     };
-    let colour = if style.link {
-        look.palette.accent
-    } else if style.muted {
-        look.palette.muted
-    } else {
-        look.palette.text
+    let colour = match style.token {
+        Some(Token::Keyword) => look.palette.accent,
+        Some(Token::String) => look.palette.code_string(),
+        Some(Token::Constant) => look.palette.code_constant(),
+        Some(Token::Function) => look.palette.code_function(),
+        Some(Token::Comment) => look.palette.muted,
+        None if style.link => look.palette.accent,
+        None if style.muted => look.palette.muted,
+        None => look.palette.text,
     };
     let [r, g, b, a] = colour;
     let mut attrs = Attrs::new()
@@ -306,7 +324,7 @@ fn attrs<'a>(kind: Kind, style: Style, script: Script, look: &Look<'a>) -> Attrs
     if !emoji && (style.bold || matches!(kind, Kind::Heading(_))) {
         attrs = attrs.weight(Weight::BOLD);
     }
-    if !emoji && style.italic {
+    if !emoji && (style.italic || style.token == Some(Token::Comment)) {
         attrs = attrs.style(FontStyle::Italic);
     }
     if style.code && kind != Kind::Code {

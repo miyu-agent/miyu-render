@@ -8,6 +8,7 @@ mod columns;
 mod diagram;
 mod draw;
 mod formula;
+mod highlight;
 mod layout;
 mod pages;
 mod paint;
