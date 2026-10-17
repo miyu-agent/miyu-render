@@ -3,7 +3,9 @@
 //! `markdown {markdown, theme?}`：画成图，每一页经 `blob.put` 交核心，回 `{pages: [{blob, width, height}]}`。字最多
 //! [`MAX_CHARS`] 个（同旧版）；`theme` 不写的照配置。字体第一次画的时候才挑，配置换了字体下一次重挑。
 
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::panic::AssertUnwindSafe;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, mpsc};
+use std::time::Duration;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
@@ -11,7 +13,7 @@ use cosmic_text::fontdb::Database;
 use serde_json::{Value, json};
 
 use crate::fonts::Generic;
-use crate::render::{Engine, Style};
+use crate::render::{Engine, Page, Style};
 use crate::settings::Settings;
 use crate::theme::Theme;
 use crate::wire::{Answer, Wire};
@@ -33,14 +35,21 @@ impl Core for Wire {
     }
 }
 
-/// 几样共用的：配置、画的那一套、核心、字体库从哪来。
+/// 字体库从哪来：正式跑是系统的，测试是仓库里的测试字体。
+pub type Fonts = Arc<dyn Fn() -> (Database, Generic) + Send + Sync>;
+
+/// 一次最多画多久（设计 36 第四节第 6 条）。
+pub const TIME_LIMIT: Duration = Duration::from_secs(30);
+
+/// 几样共用的：配置、画的那一套、核心、字体库从哪来、限时。
 pub struct State {
     pub settings: Mutex<Settings>,
-    /// 画的那一套：第一次画才开，字体换了扔掉重开。一次只画一张。
-    pub engine: Mutex<Option<Engine>>,
+    /// 画的那一套：第一次画才开，字体换了、画崩了扔掉重开。一次只画一张。
+    pub engine: Arc<Mutex<Option<Engine>>>,
     pub core: Arc<dyn Core>,
-    /// 字体库：正式跑是系统的，测试是仓库里的测试字体。
-    pub fonts: Box<dyn Fn() -> (Database, Generic) + Send + Sync>,
+    pub fonts: Fonts,
+    /// 一次最多画多久：正式跑是 [`TIME_LIMIT`]。
+    pub limit: Duration,
 }
 
 fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -91,34 +100,63 @@ fn markdown(state: &State, params: &Value) -> Answer {
         palette: theme.palette(),
         font_size: settings.font_size,
     };
-    let page = {
-        let mut engine = locked(&state.engine);
-        if engine.is_none() {
-            let (database, generic) = (state.fonts)();
-            let fonts = (settings.font.as_deref(), settings.code_font.as_deref());
-            let opened = Engine::new(database, fonts, &generic)
-                .map_err(|error| failed(&error.to_string()))?;
-            if let Some(note) = &opened.families().note {
-                eprintln!("{note}");
+    let fonts = (settings.font.clone(), settings.code_font.clone());
+    let pages = draw(state, text.to_string(), fonts, style)?;
+    let mut answered = Vec::with_capacity(pages.len());
+    for (index, page) in pages.iter().enumerate() {
+        let name = format!("render-{}.png", index + 1);
+        let put = state
+            .core
+            .call(
+                "blob.put",
+                &json!({"data": STANDARD.encode(&page.png), "name": name}),
+            )
+            .map_err(|error| failed(&format!("blob.put failed: {error}")))?;
+        let blob = put["blob"]
+            .as_str()
+            .ok_or_else(|| failed("blob.put gave no blob"))?;
+        answered.push(json!({"blob": blob, "width": page.width, "height": page.height}));
+    }
+    Ok(json!({ "pages": answered }))
+}
+
+/// 在另一个线程里画，等至多 `state.limit`：画崩了（panic）接住、扔掉画的那一套（下一次重开）；超时的不等了，那一张画完自己扔掉。
+fn draw(
+    state: &State,
+    text: String,
+    (body, code): (Option<String>, Option<String>),
+    style: Style,
+) -> Result<Vec<Page>, Value> {
+    let (engine, fonts) = (Arc::clone(&state.engine), Arc::clone(&state.fonts));
+    let (tell, answer) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut held = locked(&engine);
+        let done = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            if held.is_none() {
+                let (database, generic) = fonts();
+                let opened = Engine::new(database, (body.as_deref(), code.as_deref()), &generic)?;
+                if let Some(note) = &opened.families().note {
+                    eprintln!("{note}");
+                }
+                *held = Some(opened);
             }
-            *engine = Some(opened);
+            Ok::<_, crate::fonts::FontError>(
+                held.as_mut().map(|engine| engine.render(&text, &style)),
+            )
+        }));
+        if done.is_err() {
+            *held = None;
         }
-        let Some(engine) = engine.as_mut() else {
-            return Err(failed("renderer not ready"));
-        };
-        engine.render(text, &style)
-    };
-    let put = state
-        .core
-        .call(
-            "blob.put",
-            &json!({"data": STANDARD.encode(&page.png), "name": "render.png"}),
-        )
-        .map_err(|error| failed(&format!("blob.put failed: {error}")))?;
-    let blob = put["blob"]
-        .as_str()
-        .ok_or_else(|| failed("blob.put gave no blob"))?;
-    Ok(json!({"pages": [{"blob": blob, "width": page.width, "height": page.height}]}))
+        drop(tell.send(done));
+    });
+    match answer.recv_timeout(state.limit) {
+        Ok(Ok(Ok(Some(Ok(pages))))) => Ok(pages),
+        Ok(Ok(Ok(Some(Err(too_long))))) => Err(failed(&too_long.to_string())),
+        Ok(Ok(Err(error))) => Err(failed(&error.to_string())),
+        Ok(Ok(Ok(None))) => Err(failed("renderer not ready")),
+        Ok(Err(_)) => Err(failed("the renderer crashed")),
+        Err(_) => Err(failed("took too long to draw")),
+    }
 }
 
 #[cfg(test)]

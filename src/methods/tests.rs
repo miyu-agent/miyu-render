@@ -1,8 +1,10 @@
-//! `markdown` 方法：画好经 `blob.put` 交核心（字节是 PNG、宽高对得上），回编号和宽高；`theme` 照写的、不写照配置；写错的
+//! `markdown` 方法：画好经 `blob.put` 交核心（字节是 PNG、宽高对得上，名字照第几页），回编号和宽高；长的分几页；画崩了接住、下一次重开；
+//! 太久不等；`theme` 照写的、不写照配置；写错的
 //! `bad_params`（-32602）；字体一个有中文的都没有、`blob.put` 不成的回失败（-32010）；登记的名字；不认识的方法。
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
@@ -30,8 +32,8 @@ impl Core for Fake {
 }
 
 /// 测试字体做的字体库：`files` 是 `tests/fonts/` 里的。
-fn fonts(files: &'static [&'static str]) -> Box<dyn Fn() -> (Database, Generic) + Send + Sync> {
-    Box::new(move || {
+fn fonts(files: &'static [&'static str]) -> Fonts {
+    Arc::new(move || {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fonts");
         let mut database = Database::new();
         for file in files {
@@ -48,9 +50,10 @@ fn setup(refuse: bool, files: &'static [&'static str]) -> (State, Arc<Fake>) {
     });
     let state = State {
         settings: Mutex::new(crate::settings::Settings::default()),
-        engine: Mutex::new(None),
+        engine: Arc::new(Mutex::new(None)),
         core: Arc::clone(&fake) as Arc<dyn Core>,
         fonts: fonts(files),
+        limit: TIME_LIMIT,
     };
     (state, fake)
 }
@@ -66,7 +69,6 @@ fn markdown(state: &State, params: &Value) -> Answer {
 fn uploaded(fake: &Fake) -> image::RgbaImage {
     let put = fake.put.lock().expect("没 panic");
     assert_eq!(put.len(), 1);
-    assert_eq!(put[0]["name"], "render.png");
     let bytes = STANDARD
         .decode(put[0]["data"].as_str().expect("有 data"))
         .expect("是 base64");
@@ -78,6 +80,10 @@ fn a_page_goes_to_the_core_and_comes_back_as_a_blob() {
     let (state, fake) = setup(false, &["cjk.otf"]);
     let answer = markdown(&state, &json!({"markdown": "你好世界"})).expect("画得出");
     let image = uploaded(&fake);
+    assert_eq!(
+        fake.put.lock().expect("没 panic")[0]["name"],
+        "render-1.png"
+    );
     assert_eq!(
         answer,
         json!({"pages": [{"blob": "b1", "width": image.width(), "height": image.height()}]})
@@ -152,4 +158,51 @@ fn registered_names_and_unknown_methods() {
     let (state, _) = setup(false, &["cjk.otf"]);
     let error = call(&state, &json!({"method": "nope", "params": {}})).expect_err("不认识");
     assert_eq!(error["code"], -32601);
+}
+
+#[test]
+fn a_long_reply_comes_back_as_several_pages() {
+    let (state, fake) = setup(false, &["cjk.otf"]);
+    let long = "这个群里说话的时候长回复会转成图。\n\n".repeat(400);
+    let answer = markdown(&state, &json!({ "markdown": long })).expect("画得出");
+    let pages = answer["pages"].as_array().expect("几页");
+    assert!(pages.len() >= 2, "{answer}");
+    let names: Vec<Value> = fake
+        .put
+        .lock()
+        .expect("没 panic")
+        .iter()
+        .map(|put| put["name"].clone())
+        .collect();
+    assert_eq!(names.len(), pages.len());
+    assert_eq!(names[1], "render-2.png");
+}
+
+#[test]
+fn a_crash_is_caught_and_the_next_call_starts_over() {
+    let (mut state, _) = setup(false, &["cjk.otf"]);
+    let once = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let good = fonts(&["cjk.otf"]);
+    let flag = Arc::clone(&once);
+    state.fonts = Arc::new(move || {
+        assert!(
+            !flag.swap(false, std::sync::atomic::Ordering::SeqCst),
+            "字体库读到一半崩了"
+        );
+        good()
+    });
+    let error = markdown(&state, &json!({"markdown": "你好"})).expect_err("崩了");
+    assert_eq!(error["message"], "the renderer crashed");
+    assert!(
+        markdown(&state, &json!({"markdown": "你好"})).is_ok(),
+        "下一次重开"
+    );
+}
+
+#[test]
+fn too_slow_gives_up() {
+    let (mut state, _) = setup(false, &["cjk.otf"]);
+    state.limit = Duration::ZERO;
+    let error = markdown(&state, &json!({"markdown": "你好"})).expect_err("太久");
+    assert_eq!(error["message"], "took too long to draw");
 }

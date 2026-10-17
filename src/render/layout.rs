@@ -5,12 +5,14 @@
 //! - 颜色从六个颜色来：正文、标题、粗体都是字的颜色（粗体、标题用真的粗字形，不再像旧版那样靠变色），链接是强调色，删除线是
 //!   淡字，代码的字是字的颜色。
 //! - 行内代码的字形带一个记号（`INLINE_CODE`），画的时候在下面垫一块代码的底。
+//! - 每个字用哪一类字体（代码里的中日韩字、表情）在 `script`。
 
 use cosmic_text::fontdb::Family;
 use cosmic_text::{
     Align, Attrs, Buffer, Color, FontSystem, Metrics, Shaping, Style as FontStyle, Weight, Wrap,
 };
 
+use super::script::{self, Script};
 use super::table::{self, Grid};
 use super::{COLUMN, units};
 use crate::markdown::{Block, Kind, Span, Style};
@@ -44,6 +46,8 @@ pub struct Look<'a> {
     pub size: f32,
     pub body: &'a str,
     pub code: &'a str,
+    /// 彩色表情字体，字体库里没有的是空的（照正文字体排）。
+    pub emoji: Option<&'a str>,
 }
 
 /// 排好的一块。
@@ -62,6 +66,8 @@ pub struct Laid {
     pub task: Option<(bool, (u32, u32), u32)>,
     /// 表格排好的格子（R-2 中）。
     pub grid: Option<Grid>,
+    /// 能从哪里断开（分栏，R-2 下）：每一行字、表格每一行的底离这一块顶多远，照先后，最后一个就是整块的高。
+    pub breaks: Vec<u32>,
 }
 
 /// 排一块。
@@ -93,6 +99,11 @@ pub fn lay(system: &mut FontSystem, block: &Block, look: &Look) -> Laid {
         .as_ref()
         .and_then(|found| table::lay(system, found, look))
     {
+        // 表格照行断；最后一行的底换成整张表的高（连最下面一条线）。
+        let mut breaks: Vec<u32> = grid.rows.iter().map(|row| row.top + row.height).collect();
+        if let Some(last) = breaks.last_mut() {
+            *last = grid.height;
+        }
         return Laid {
             kind: block.kind,
             buffer: None,
@@ -100,6 +111,7 @@ pub fn lay(system: &mut FontSystem, block: &Block, look: &Look) -> Laid {
             height: grid.height,
             margin,
             task: None,
+            breaks,
             grid: Some(grid),
         };
     }
@@ -112,6 +124,7 @@ pub fn lay(system: &mut FontSystem, block: &Block, look: &Look) -> Laid {
             margin,
             task: None,
             grid: None,
+            breaks: vec![font],
         };
     }
     let line = units::ceil(size * LINE_HEIGHT);
@@ -128,12 +141,17 @@ pub fn lay(system: &mut FontSystem, block: &Block, look: &Look) -> Laid {
     };
     let width = COLUMN.saturating_sub(inset.0 + right);
     let buffer = shape(system, block, look, width);
-    let text_height = buffer
-        .layout_runs()
-        .map(|run| units::ceil(run.line_top + run.line_height))
-        .max()
-        .unwrap_or(0);
+    let mut breaks: Vec<u32> = Vec::new();
+    for run in buffer.layout_runs() {
+        let at = inset.1 + units::ceil(run.line_top + run.line_height);
+        if breaks.last().is_none_or(|last| *last < at) {
+            breaks.push(at);
+        }
+    }
+    let text_height = breaks.last().map_or(0, |last| last - inset.1);
     let height = inset.1 + text_height.max(line) + pad_bottom;
+    breaks.pop();
+    breaks.push(height);
     Laid {
         kind: block.kind,
         buffer: Some(buffer),
@@ -142,6 +160,7 @@ pub fn lay(system: &mut FontSystem, block: &Block, look: &Look) -> Laid {
         margin,
         task,
         grid: None,
+        breaks,
     }
 }
 
@@ -167,40 +186,15 @@ pub fn rich(
     } else {
         Wrap::None
     });
-    let pieces = cjk_apart(spans, kind == Kind::Code);
+    let pieces = script::split(spans, kind == Kind::Code);
     let spans: Vec<(&str, Attrs)> = pieces
         .iter()
-        .map(|(text, style, cjk)| (text.as_str(), attrs(kind, *style, *cjk, look)))
+        .map(|(text, style, script)| (text.as_str(), attrs(kind, *style, *script, look)))
         .collect();
-    let default = attrs(kind, Style::default(), false, look);
+    let default = attrs(kind, Style::default(), Script::Plain, look);
     buffer.set_rich_text(spans, &default, Shaping::Advanced, align);
     buffer.shape_until_scroll(system, true);
     buffer
-}
-
-/// 代码里的中日韩字和别的字分开（交回字、样子、是不是中日韩字）：中日韩字用正文的字体。等宽字体里的中文一个字占两格，看着字距
-/// 拉开（网页 2026-09-30 同一条：`base.css` 的「Miyu CJK Sans」，字的范围照它）。不是代码的整段照原样。
-fn cjk_apart(spans: &[Span], code_block: bool) -> Vec<(String, Style, bool)> {
-    let mut pieces: Vec<(String, Style, bool)> = Vec::new();
-    for span in spans {
-        let code = code_block || span.style.code;
-        for ch in span.text.chars() {
-            let cjk = code && is_cjk(ch);
-            match pieces.last_mut() {
-                Some((text, style, last)) if *style == span.style && *last == cjk => text.push(ch),
-                _ => pieces.push((ch.to_string(), span.style, cjk)),
-            }
-        }
-    }
-    pieces
-}
-
-/// 中日韩的字（同网页 `base.css` 的 `unicode-range`）。
-fn is_cjk(ch: char) -> bool {
-    matches!(
-        u32::from(ch),
-        0x2E80..=0x2FDF | 0x3000..=0x303F | 0x3040..=0x30FF | 0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xF900..=0xFAFF | 0xFE30..=0xFE4F | 0xFF00..=0xFFEF
-    )
 }
 
 /// 这一种块、这一段字的字号和行高。
@@ -225,10 +219,16 @@ fn heading_scale(level: u8) -> f32 {
     }
 }
 
-/// 一段字的字体、颜色、粗细、斜不斜、字号；行内代码带记号（代码里的中日韩字也带，底照样垫上）。
-fn attrs<'a>(kind: Kind, style: Style, cjk: bool, look: &Look<'a>) -> Attrs<'a> {
+/// 一段字的字体、颜色、粗细、斜不斜、字号；行内代码带记号（代码里的中日韩字、表情也带，底照样垫上）。表情用彩色表情字体、
+/// 常规粗细、不斜（[`script`]）。
+fn attrs<'a>(kind: Kind, style: Style, script: Script, look: &Look<'a>) -> Attrs<'a> {
     let code = style.code || kind == Kind::Code;
-    let family = if code && !cjk { look.code } else { look.body };
+    let emoji = script == Script::Emoji;
+    let family = match script {
+        Script::Emoji => look.emoji.unwrap_or(look.body),
+        Script::Plain if code => look.code,
+        Script::Cjk | Script::Plain => look.body,
+    };
     let colour = if style.link {
         look.palette.accent
     } else if style.muted {
@@ -241,10 +241,10 @@ fn attrs<'a>(kind: Kind, style: Style, cjk: bool, look: &Look<'a>) -> Attrs<'a> 
         .family(Family::Name(family))
         .color(Color::rgba(r, g, b, a))
         .metrics(metrics(kind, style, look.size));
-    if style.bold || matches!(kind, Kind::Heading(_)) {
+    if !emoji && (style.bold || matches!(kind, Kind::Heading(_))) {
         attrs = attrs.weight(Weight::BOLD);
     }
-    if style.italic {
+    if !emoji && style.italic {
         attrs = attrs.style(FontStyle::Italic);
     }
     if style.code && kind != Kind::Code {

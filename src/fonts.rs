@@ -23,6 +23,8 @@ pub struct Generic {
     pub sans: Vec<String>,
     /// 等宽（`monospace`）。
     pub mono: Vec<String>,
+    /// 彩色表情。
+    pub emoji: Vec<String>,
 }
 
 /// 挑好的两个族。
@@ -32,6 +34,8 @@ pub struct Families {
     pub body: String,
     /// 代码。
     pub code: String,
+    /// 彩色表情：字体库里有的话。表情字明确交给它，不让排字自己挑（粗体的标题里会挑到黑白的表情字体）。
+    pub emoji: Option<String>,
     /// 挑的时候换过的一句（写进运行日志）：正文想用的不含中文、换成了有中文的。
     pub note: Option<String>,
 }
@@ -100,7 +104,13 @@ pub fn resolve(
         None => (chinese().ok_or(FontError::NoChinese)?, None),
     };
     let code = first(code, &generic.mono).unwrap_or_else(|| body.clone());
-    Ok(Families { body, code, note })
+    let emoji = first(None, &generic.emoji);
+    Ok(Families {
+        body,
+        code,
+        emoji,
+        note,
+    })
 }
 
 #[cfg(test)]

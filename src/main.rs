@@ -39,9 +39,10 @@ fn serve() -> ExitCode {
     let wire = Arc::new(Wire::new(Box::new(io::stdout())));
     let state = Arc::new(State {
         settings: Mutex::new(Settings::default()),
-        engine: Mutex::new(None),
+        engine: Arc::new(Mutex::new(None)),
         core: Arc::clone(&wire) as Arc<dyn methods::Core>,
-        fonts: Box::new(system_fonts),
+        fonts: Arc::new(system_fonts),
+        limit: methods::TIME_LIMIT,
     });
     let reading = {
         let (wire, state) = (Arc::clone(&wire), Arc::clone(&state));

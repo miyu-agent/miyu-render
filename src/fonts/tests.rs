@@ -22,6 +22,7 @@ fn generic(sans: &[&str], mono: &[&str]) -> Generic {
     Generic {
         sans: owned(sans),
         mono: owned(mono),
+        emoji: vec!["Noto Color Emoji".into()],
     }
 }
 
@@ -116,4 +117,15 @@ fn no_chinese_font_at_all_is_an_error() {
 fn the_system_list_is_never_empty() {
     let found = system::generic();
     assert!(!found.sans.is_empty() && !found.mono.is_empty());
+}
+
+#[test]
+fn the_colour_emoji_font_is_picked_when_installed() {
+    let without =
+        resolve(&machine(), None, None, &generic(&["Noto Sans CJK SC"], &[])).expect("挑得出");
+    assert_eq!(without.emoji, None);
+    let mut with = machine();
+    with.0.push(("Noto Color Emoji", false));
+    let got = resolve(&with, None, None, &generic(&["Noto Sans CJK SC"], &[])).expect("挑得出");
+    assert_eq!(got.emoji.as_deref(), Some("Noto Color Emoji"));
 }

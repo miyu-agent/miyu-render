@@ -1,12 +1,15 @@
-//! 画（设计 36 第四节）：Markdown 读成块（`crate::markdown`）、一块一块排字（[`layout`]）、画到页面上（[`draw`]）、编成 PNG。
-//! R-2 上一栏往下排；分栏、分页随 R-2 下。
+//! 画（设计 36 第四节）：Markdown 读成块（`crate::markdown`）、一块一块排字（[`layout`]）、分栏分页（[`columns`]、[`pages`]）、
+//! 画到页面上（[`draw`]）、编成 PNG。
 //!
 //! - 字体库、字形的缓存放在 [`Engine`] 里，一次只画一张（调的一方拿锁）。字体库第一次画的时候才读（包常开，闲着不占）。
 //! - 字形照透明度叠到页面上（[`paint`]），不盖像素：mermaid、公式以后也照这一条叠（设计 36 第四节第 2 条）。
 
+mod columns;
 mod draw;
 mod layout;
+mod pages;
 mod paint;
+mod script;
 mod table;
 mod units;
 
@@ -83,8 +86,12 @@ impl Engine {
         &self.families
     }
 
-    /// 把 `markdown` 照 `style` 画成一页。
-    pub fn render(&mut self, markdown: &str, style: &Style) -> Page {
+    /// 把 `markdown` 照 `style` 画成一页或几页。
+    ///
+    /// # Errors
+    ///
+    /// 太长，超了像素的上限，或者有一行比一页还高：[`TooLong`]。
+    pub fn render(&mut self, markdown: &str, style: &Style) -> Result<Vec<Page>, TooLong> {
         if self.cache.image_cache.len() > MAX_CACHED_GLYPHS {
             self.cache.image_cache.clear();
         }
@@ -93,39 +100,98 @@ impl Engine {
             size: units::float(style.font_size),
             body: &self.families.body,
             code: &self.families.code,
+            emoji: self.families.emoji.as_deref(),
         };
         let laid: Vec<layout::Laid> = crate::markdown::blocks(markdown)
             .iter()
             .map(|block| layout::lay(&mut self.system, block, &look))
             .collect();
-        let mut tops = Vec::with_capacity(laid.len());
-        let mut bottom = 0;
-        for (index, block) in laid.iter().enumerate() {
-            let gap = if index == 0 {
-                0
-            } else {
-                block.margin.0.max(laid[index - 1].margin.1)
-            };
-            tops.push(bottom + gap);
-            bottom += gap + block.height;
+        let shapes: Vec<columns::Shape> = laid.iter().map(shape).collect();
+        let plan = pages::plan(&shapes).ok_or(TooLong)?;
+        let background = image::Rgba(style.palette.background);
+        // 一块先画成一条，再把分到的几行拷上去；同一块连着用（拆开的）不重画。
+        let mut strip: Option<(usize, RgbaImage)> = None;
+        let mut out = Vec::with_capacity(plan.len());
+        for page in &plan {
+            let used = page.iter().map(|column| column.used).max().unwrap_or(0);
+            let (width, height) = pages::size(page.len(), used);
+            let mut image = RgbaImage::from_pixel(width, height, background);
+            for (index, column) in page.iter().enumerate() {
+                let left = PADDING + u32::try_from(index).unwrap_or(0) * (COLUMN + columns::GAP);
+                for piece in &column.pieces {
+                    if strip
+                        .as_ref()
+                        .is_none_or(|(block, _)| *block != piece.block)
+                    {
+                        let block = &laid[piece.block];
+                        let mut drawn =
+                            RgbaImage::from_pixel(COLUMN, block.height.max(1), background);
+                        draw::block(
+                            &mut drawn,
+                            &mut self.system,
+                            &mut self.cache,
+                            block,
+                            (0, 0),
+                            &style.palette,
+                        );
+                        strip = Some((piece.block, drawn));
+                    }
+                    if let Some((_, drawn)) = strip.as_ref() {
+                        copy(
+                            &mut image,
+                            drawn,
+                            (piece.from, piece.to),
+                            (left, PADDING + piece.y),
+                        );
+                    }
+                }
+            }
+            out.push(Page {
+                png: paint::png(&image),
+                width,
+                height,
+            });
         }
-        let width = PADDING * 2 + COLUMN;
-        let height = (PADDING * 2 + bottom).max(MIN_HEIGHT);
-        let mut image = RgbaImage::from_pixel(width, height, image::Rgba(style.palette.background));
-        for (block, top) in laid.iter().zip(tops) {
-            draw::block(
-                &mut image,
-                &mut self.system,
-                &mut self.cache,
-                block,
-                (PADDING, PADDING + top),
-                &style.palette,
-            );
+        Ok(out)
+    }
+}
+
+/// 太长，画不了。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TooLong;
+
+impl std::fmt::Display for TooLong {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "too long to draw")
+    }
+}
+
+/// 排好的一块的形状（分栏只看它）。
+fn shape(laid: &layout::Laid) -> columns::Shape {
+    let header = laid
+        .grid
+        .as_ref()
+        .and_then(|grid| grid.rows.first())
+        .filter(|row| row.header)
+        .map_or(0, |row| row.height);
+    columns::Shape {
+        breaks: laid.breaks.clone(),
+        margin: laid.margin,
+        heading: matches!(laid.kind, crate::markdown::Kind::Heading(_)),
+        header,
+        table: laid.grid.is_some(),
+    }
+}
+
+/// 把 `strip` 里 `[from, to)` 那几行拷到 `image` 的 `(left, top)`。
+fn copy(image: &mut RgbaImage, strip: &RgbaImage, (from, to): (u32, u32), (left, top): (u32, u32)) {
+    for row in from..to.min(strip.height()) {
+        let y = top + row - from;
+        if y >= image.height() {
+            break;
         }
-        Page {
-            png: paint::png(&image),
-            width,
-            height,
+        for x in 0..strip.width().min(image.width().saturating_sub(left)) {
+            image.put_pixel(left + x, y, *strip.get_pixel(x, row));
         }
     }
 }

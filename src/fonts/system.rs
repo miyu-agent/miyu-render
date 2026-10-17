@@ -20,12 +20,14 @@ pub fn generic() -> Generic {
         return Generic {
             sans: names(&["PingFang SC", "Hiragino Sans GB", "Heiti SC"]),
             mono: names(&["Menlo", "SF Mono", "Monaco"]),
+            emoji: names(&["Apple Color Emoji"]),
         };
     }
     if cfg!(windows) {
         return Generic {
             sans: names(&["Microsoft YaHei", "Microsoft YaHei UI", "SimHei"]),
             mono: names(&["Consolas", "Cascadia Mono", "Courier New"]),
+            emoji: names(&["Segoe UI Emoji"]),
         };
     }
     let mut sans = fc_match("sans-serif:lang=zh-cn")
@@ -43,7 +45,13 @@ pub fn generic() -> Generic {
         "Liberation Mono",
         "Noto Sans Mono",
     ]));
-    Generic { sans, mono }
+    let emoji = names(&[
+        "Noto Color Emoji",
+        "Twemoji",
+        "JoyPixels",
+        "Apple Color Emoji",
+    ]);
+    Generic { sans, mono, emoji }
 }
 
 /// 问 fontconfig 这个名字落到哪个族：交回它的第一个族名；问不到的是空的。

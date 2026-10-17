@@ -25,6 +25,7 @@ fn grid(markdown: &str) -> Grid {
         size: 36.0,
         body: "Miyu Test CJK",
         code: "Miyu Test Mono",
+        emoji: None,
     };
     let block = blocks(markdown).remove(0);
     lay(&mut system(), block.table.as_ref().expect("是表格"), &look).expect("排得出")

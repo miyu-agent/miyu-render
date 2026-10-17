@@ -25,6 +25,7 @@ fn look() -> Look<'static> {
         size: 36.0,
         body: "Miyu Test CJK",
         code: "Miyu Test Mono",
+        emoji: None,
     }
 }
 
@@ -170,4 +171,16 @@ fn chinese_in_code_uses_the_body_font() {
         ],
         "中日韩字用正文字体、照样垫代码的底；代码块不垫"
     );
+}
+
+#[test]
+fn emoji_in_a_heading_stay_regular() {
+    // 彩色表情字体只有常规体：要粗的会挑到黑白的表情字体（R-2 下实测）。
+    let got = laid("# 好🎉");
+    let weights: Vec<Weight> = glyphs(&got[0])
+        .iter()
+        .map(|glyph| glyph.font_weight)
+        .collect();
+    assert_eq!(weights.first(), Some(&Weight::BOLD));
+    assert_eq!(weights.last(), Some(&Weight::NORMAL), "{weights:?}");
 }

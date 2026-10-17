@@ -1,5 +1,5 @@
 //! 画一页：用仓库里的测试字体（AGENTS.md 第 4 条）。挑到的西文字体不含中文的换成有中文的；画出来的宽高、底色、字的颜色在
-//! 页面上、整页不透明（叠上去，不盖）；代码块、引用、分割线、勾选框各用各的颜色；没有粗体的字体假装加粗；表格有表头、隔行的底和格子线；段和段之间有空；字多了页面变高；三套主题的底不一样；字体库里没有中文的报错。
+//! 页面上、整页不透明（叠上去，不盖）；代码块、引用、分割线、勾选框各用各的颜色；没有粗体的字体假装加粗；表格有表头、隔行的底和格子线；段和段之间有空；长的分栏、第二栏有字；字多了页面变高；三套主题的底不一样；字体库里没有中文的报错。
 
 use std::path::Path;
 
@@ -26,6 +26,7 @@ fn generic() -> Generic {
     Generic {
         sans: vec!["Miyu Test Latin".into()],
         mono: vec!["Miyu Test Mono".into()],
+        emoji: Vec::new(),
     }
 }
 
@@ -36,6 +37,13 @@ fn engine() -> Engine {
         &generic(),
     )
     .expect("挑得出字体")
+}
+
+/// 画成一页（这些测试的字都短）。
+fn one(engine: &mut Engine, markdown: &str, style: &Style) -> Page {
+    let mut pages = engine.render(markdown, style).expect("画得了");
+    assert_eq!(pages.len(), 1);
+    pages.remove(0)
 }
 
 fn style(theme: Theme) -> Style {
@@ -84,7 +92,7 @@ fn a_latin_font_is_swapped_for_one_with_chinese() {
 #[test]
 fn a_page_has_the_column_width_the_background_and_the_ink() {
     let mut engine = engine();
-    let page = engine.render("你好世界\n\nhello 测试", &style(Theme::Paper));
+    let page = one(&mut engine, "你好世界\n\nhello 测试", &style(Theme::Paper));
     let image = decoded(&page);
     assert_eq!((image.width(), image.height()), (page.width, page.height));
     assert_eq!(page.width, PADDING * 2 + COLUMN);
@@ -108,9 +116,9 @@ fn a_page_has_the_column_width_the_background_and_the_ink() {
 fn more_text_makes_a_taller_page() {
     let mut engine = engine();
     let long = "这个群里说话\n\n".repeat(20);
-    let page = engine.render(&long, &style(Theme::Paper));
+    let page = one(&mut engine, &long, &style(Theme::Paper));
     assert!(page.height > MIN_HEIGHT * 2, "{}", page.height);
-    let short = engine.render("这个群里说话", &style(Theme::Paper));
+    let short = one(&mut engine, "这个群里说话", &style(Theme::Paper));
     assert!(page.height > short.height);
 }
 
@@ -118,7 +126,7 @@ fn more_text_makes_a_taller_page() {
 fn each_theme_paints_its_own_background() {
     let mut engine = engine();
     for theme in [Theme::Paper, Theme::Light, Theme::Dark] {
-        let image = decoded(&engine.render("你好", &style(theme)));
+        let image = decoded(&one(&mut engine, "你好", &style(theme)));
         assert_eq!(
             image.get_pixel(1, 1).0,
             theme.palette().background,
@@ -162,10 +170,11 @@ fn exactly(image: &image::RgbaImage, color: [u8; 4]) -> usize {
 fn decorations_take_their_colours() {
     let mut engine = engine();
     let palette = Theme::Paper.palette();
-    let plain = decoded(&engine.render("你好", &style(Theme::Paper)));
-    let chip = decoded(&engine.render("你 `code` 好", &style(Theme::Paper)));
+    let plain = decoded(&one(&mut engine, "你好", &style(Theme::Paper)));
+    let chip = decoded(&one(&mut engine, "你 `code` 好", &style(Theme::Paper)));
     assert!(exactly(&chip, palette.code) > 500, "行内代码的底");
-    let got = decoded(&engine.render(
+    let got = decoded(&one(
+        &mut engine,
         "```\ncode\n```\n\n> 引用\n\n---\n\n- [x] 好\n",
         &style(Theme::Paper),
     ));
@@ -196,11 +205,11 @@ fn bold_without_a_bold_face_is_drawn_heavier() {
     let mut engine = engine();
     let palette = Theme::Paper.palette();
     let regular = ink(
-        &decoded(&engine.render("这个群里说话", &style(Theme::Paper))),
+        &decoded(&one(&mut engine, "这个群里说话", &style(Theme::Paper))),
         palette.background,
     );
     let bold = ink(
-        &decoded(&engine.render("**这个群里说话**", &style(Theme::Paper))),
+        &decoded(&one(&mut engine, "**这个群里说话**", &style(Theme::Paper))),
         palette.background,
     );
     assert!(bold * 10 > regular * 11, "{bold} {regular}");
@@ -211,8 +220,8 @@ fn paragraphs_are_set_apart() {
     let mut engine = engine();
     let lines = "这\n个\n群\n里\n说\n话\n的".to_string();
     let apart = "这\n\n个\n\n群\n\n里\n\n说\n\n话\n\n的".to_string();
-    let joined = engine.render(&lines, &style(Theme::Paper)).height;
-    let split = engine.render(&apart, &style(Theme::Paper)).height;
+    let joined = one(&mut engine, &lines, &style(Theme::Paper)).height;
+    let split = one(&mut engine, &apart, &style(Theme::Paper)).height;
     assert!(split > joined + 6 * 6, "{split} {joined}");
 }
 
@@ -220,11 +229,48 @@ fn paragraphs_are_set_apart() {
 fn a_table_has_a_header_band_and_lines() {
     let mut engine = engine();
     let palette = Theme::Paper.palette();
-    let got = decoded(&engine.render(
+    let got = decoded(&one(
+        &mut engine,
         "| 名 | 数 |\n|---|---|\n| 你 | 1 |\n| 好 | 2 |\n",
         &style(Theme::Paper),
     ));
     assert!(exactly(&got, palette.header()) > 960 * 30, "表头的底");
     assert!(exactly(&got, palette.quote()) > 960 * 30, "第二行的底");
     assert!(exactly(&got, palette.line) > 960 * 3, "格子线");
+}
+
+#[test]
+fn a_long_reply_is_drawn_in_columns() {
+    let mut engine = engine();
+    let palette = Theme::Paper.palette();
+    let long = "这个群里说话的时候长回复会转成图。\n\n".repeat(60);
+    let page = one(&mut engine, &long, &style(Theme::Paper));
+    assert!(
+        page.width >= PADDING * 2 + COLUMN * 2,
+        "分了栏：{}x{}",
+        page.width,
+        page.height
+    );
+    let image = decoded(&page);
+    let second = PADDING + COLUMN + 32;
+    let ink = (second..second + COLUMN)
+        .flat_map(|x| (PADDING..page.height - PADDING).map(move |y| (x, y)))
+        .filter(|(x, y)| image.get_pixel(*x, *y).0[..3] != palette.background[..3])
+        .count();
+    assert!(ink > 1000, "第二栏有字：{ink}");
+}
+
+#[test]
+fn a_split_paragraph_continues_at_the_top_of_the_next_column() {
+    let mut engine = engine();
+    let palette = Theme::Paper.palette();
+    let long = "这个群里说话的时候长回复会转成图。".repeat(400);
+    let page = one(&mut engine, &long, &style(Theme::Paper));
+    let image = decoded(&page);
+    let second = PADDING + COLUMN + 32;
+    let ink = (second..second + COLUMN)
+        .flat_map(|x| (PADDING..PADDING + 60).map(move |y| (x, y)))
+        .filter(|(x, y)| image.get_pixel(*x, *y).0[..3] != palette.background[..3])
+        .count();
+    assert!(ink > 300, "第二栏一开头就接着前一栏的字：{ink}");
 }
