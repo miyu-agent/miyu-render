@@ -1,0 +1,57 @@
+# 渲染（设计：核心仓库 docs/designs/36-渲染.md）。给人看的字，不发给模型。
+
+[package]
+version = "0.1.0"
+protocol = [1, 1]
+name = { en = "Render", zh = "渲染", ja = "レンダリング" }
+summary = { en = "Draws Markdown as images: long replies, diagrams, formulas", zh = "把 Markdown 画成图：长回复、流程图、公式", ja = "Markdown を画像にする：長い返信、図、数式" }
+icon = "image"
+
+[command]
+name = "render"
+program = "miyu-render"
+about = { en = "Render package", zh = "渲染", ja = "レンダリング" }
+
+[process]
+args = ["serve"]
+start = "always"
+# R-1 只有给别的软件调的方法；render_image 工具随 R-6 加 tools。
+capabilities = []
+
+# 给别的软件调（核心施工 X-18）：接入QQ 的长文转图经它画。
+[export]
+methods = ["markdown"]
+
+[settings.theme]
+type = "option"
+options = ["paper", "light", "dark"]
+default = "paper"
+layers = ["system"]
+applies = "now"
+name = { en = "Colours", zh = "配色", ja = "配色" }
+description = { en = "paper: warm paper (default). light: near white. dark: dark grey.", zh = "paper 纸色（默认），light 近白，dark 深灰。", ja = "paper：紙の色（既定）。light：ほぼ白。dark：濃い灰色。" }
+
+[settings.font]
+type = "text"
+max = 128
+layers = ["system"]
+applies = "now"
+name = { en = "Font", zh = "字体", ja = "フォント" }
+description = { en = "Font family for text. Empty: the system sans-serif. A font without Chinese is swapped for one with it.", zh = "正文的字体族名。不填照系统的无衬线；不含中文的换成系统里一个有中文的。", ja = "本文のフォント名。空欄はシステムのサンセリフ。中国語の文字がないフォントは、ある別のフォントに替えます。" }
+
+[settings.code_font]
+type = "text"
+max = 128
+layers = ["system"]
+applies = "now"
+name = { en = "Code font", zh = "代码字体", ja = "コードのフォント" }
+description = { en = "Font family for code. Empty: the system monospace.", zh = "代码的字体族名。不填照系统的等宽。", ja = "コードのフォント名。空欄はシステムの等幅。" }
+
+[settings.font_size]
+type = "int"
+min = 14
+max = 56
+default = 36
+layers = ["system"]
+applies = "now"
+name = { en = "Font size (px)", zh = "字号（像素）", ja = "文字サイズ（px）" }

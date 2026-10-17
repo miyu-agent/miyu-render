@@ -1,0 +1,32 @@
+[package]
+name = "miyu-render"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+publish = false
+license = "GPL-3.0-or-later"
+description = "Miyu 的渲染软件包：把 Markdown 画成图（长文转图、render_image）。"
+
+[[bin]]
+name = "miyu-render"
+path = "src/main.rs"
+
+[dependencies]
+# 跟核心说的是一行一条的 JSON-RPC（作者说明第四节）。
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# 画好的图经 blob.put 交给核心：字节写成 base64。
+base64 = "0.22"
+# 读 Markdown（设计 36 第三节的图，同旧版）。
+pulldown-cmark = { version = "0.13.4", default-features = false }
+# 排字、画字形（同旧版）：字体库 fontdb 随它来，`cosmic_text::fontdb`。
+cosmic-text = { version = "0.19.0", default-features = false, features = ["std", "swash"] }
+# 画布和 PNG：只开 PNG。
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
