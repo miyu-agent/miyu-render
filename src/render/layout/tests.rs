@@ -1,5 +1,5 @@
 //! 排一块：标题比正文高、代码块和引用留空、列表一层层往里缩、任务项有勾选框且字让开、分割线、行内代码带记号、粗体要粗字形、
-//! 链接是强调色、删除线是淡字、表格先写成一行一行的字。
+//! 链接是强调色、删除线是淡字。
 
 use std::path::Path;
 
@@ -120,21 +120,6 @@ fn inline_styles_reach_the_glyphs() {
             .any(|glyph| glyph.color_opt == Some(colour(palette.muted))),
         "删除线是淡字"
     );
-}
-
-#[test]
-fn tables_are_written_row_by_row_for_now() {
-    let got = laid("| 你 | 好 |\n|--|--|\n| 是 | 的 |\n");
-    let text: String = got[0]
-        .buffer
-        .as_ref()
-        .expect("有字")
-        .lines
-        .iter()
-        .map(|line| line.text().to_string())
-        .collect::<Vec<_>>()
-        .join("\n");
-    assert_eq!(text, "你 | 好\n是 | 的");
 }
 
 #[test]

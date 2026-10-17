@@ -7,6 +7,7 @@ use cosmic_text::{Buffer, FontSystem, LayoutRun, SwashCache};
 use image::RgbaImage;
 
 use super::layout::{INLINE_CODE, Laid, QUOTE};
+use super::table::{Grid, PAD as TABLE_PAD, PAD_Y as TABLE_PAD_Y};
 use super::{COLUMN, paint, units};
 use crate::markdown::Kind;
 use crate::theme::{Palette, Rgba};
@@ -52,6 +53,9 @@ pub fn block(
         ),
         _ => {}
     }
+    if let Some(grid) = laid.grid.as_ref() {
+        table(image, system, cache, grid, (left, top), palette);
+    }
     if let Some((done, (x, y), side)) = laid.task {
         checkbox(image, (left + x, top + y), side, done, palette);
     }
@@ -63,6 +67,51 @@ pub fn block(
         chips(image, &run, origin, palette.code);
     }
     text(image, system, cache, buffer, origin);
+}
+
+/// 表格：先铺表头、隔行的底，再画每一格的字（行内代码垫底），最后画一像素的格子线。
+fn table(
+    image: &mut RgbaImage,
+    system: &mut FontSystem,
+    cache: &mut SwashCache,
+    grid: &Grid,
+    (left, top): (u32, u32),
+    palette: &Palette,
+) {
+    for row in &grid.rows {
+        let colour = if row.header {
+            Some(palette.header())
+        } else if row.stripe {
+            Some(palette.quote())
+        } else {
+            None
+        };
+        if let Some(colour) = colour {
+            rect(image, (left, top + row.top, COLUMN, row.height), colour);
+        }
+        let mut x = left;
+        for (width, cell) in grid.widths.iter().zip(&row.cells) {
+            if let Some(buffer) = cell {
+                let origin = (x + TABLE_PAD, top + row.top + TABLE_PAD_Y);
+                for run in buffer.layout_runs() {
+                    chips(image, &run, origin, palette.code);
+                }
+                text(image, system, cache, buffer, origin);
+            }
+            x += width;
+        }
+    }
+    let bottom = grid.rows.last().map_or(0, |row| row.top + row.height);
+    for row in &grid.rows {
+        rect(image, (left, top + row.top, COLUMN, 1), palette.line);
+    }
+    rect(image, (left, top + bottom, COLUMN, 1), palette.line);
+    let mut x = left;
+    for width in &grid.widths {
+        rect(image, (x, top, 1, bottom + 1), palette.line);
+        x += width;
+    }
+    rect(image, (left + COLUMN - 1, top, 1, bottom + 1), palette.line);
 }
 
 /// 行内代码的底：一行里挨着的代码字形连成一块。

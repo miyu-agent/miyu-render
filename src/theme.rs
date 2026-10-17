@@ -80,6 +80,11 @@ impl Palette {
     pub fn quote(&self) -> Rgba {
         mix(self.background, self.text, 4)
     }
+
+    /// 表头的底：比引用再深一档。
+    pub fn header(&self) -> Rgba {
+        mix(self.background, self.text, 8)
+    }
 }
 
 /// `from` 往 `to` 挪 `percent`（0 到 100，超了照 100）：每个通道各算，四舍五入，不透明度照 `from`。

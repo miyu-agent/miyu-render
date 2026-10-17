@@ -1,5 +1,5 @@
 //! 画一页：用仓库里的测试字体（AGENTS.md 第 4 条）。挑到的西文字体不含中文的换成有中文的；画出来的宽高、底色、字的颜色在
-//! 页面上、整页不透明（叠上去，不盖）；代码块、引用、分割线、勾选框各用各的颜色；没有粗体的字体假装加粗；段和段之间有空；字多了页面变高；三套主题的底不一样；字体库里没有中文的报错。
+//! 页面上、整页不透明（叠上去，不盖）；代码块、引用、分割线、勾选框各用各的颜色；没有粗体的字体假装加粗；表格有表头、隔行的底和格子线；段和段之间有空；字多了页面变高；三套主题的底不一样；字体库里没有中文的报错。
 
 use std::path::Path;
 
@@ -214,4 +214,17 @@ fn paragraphs_are_set_apart() {
     let joined = engine.render(&lines, &style(Theme::Paper)).height;
     let split = engine.render(&apart, &style(Theme::Paper)).height;
     assert!(split > joined + 6 * 6, "{split} {joined}");
+}
+
+#[test]
+fn a_table_has_a_header_band_and_lines() {
+    let mut engine = engine();
+    let palette = Theme::Paper.palette();
+    let got = decoded(&engine.render(
+        "| 名 | 数 |\n|---|---|\n| 你 | 1 |\n| 好 | 2 |\n",
+        &style(Theme::Paper),
+    ));
+    assert!(exactly(&got, palette.header()) > 960 * 30, "表头的底");
+    assert!(exactly(&got, palette.quote()) > 960 * 30, "第二行的底");
+    assert!(exactly(&got, palette.line) > 960 * 3, "格子线");
 }

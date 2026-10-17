@@ -1,4 +1,4 @@
-//! 配色：三套照名字认得出，别的不认；每个颜色和底分得开，链接和正文、淡字不撞；挪颜色的两头、中间、四舍五入；引用的底比页面深一档。
+//! 配色：三套照名字认得出，别的不认；每个颜色和底分得开，链接和正文、淡字不撞；挪颜色的两头、中间、四舍五入；引用、表头的底一档比一档深。
 
 use super::*;
 
@@ -59,5 +59,6 @@ fn mixing_moves_part_of_the_way_and_keeps_the_page_opaque() {
     for theme in [Theme::Paper, Theme::Light, Theme::Dark] {
         let p = theme.palette();
         assert_ne!(p.quote(), p.background, "{theme:?}: 引用比页面深一档");
+        assert_ne!(p.header(), p.quote(), "{theme:?}: 表头再深一档");
     }
 }

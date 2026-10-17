@@ -8,9 +8,10 @@
 
 use cosmic_text::fontdb::Family;
 use cosmic_text::{
-    Attrs, Buffer, Color, FontSystem, Metrics, Shaping, Style as FontStyle, Weight, Wrap,
+    Align, Attrs, Buffer, Color, FontSystem, Metrics, Shaping, Style as FontStyle, Weight, Wrap,
 };
 
+use super::table::{self, Grid};
 use super::{COLUMN, units};
 use crate::markdown::{Block, Kind, Span, Style};
 use crate::theme::Palette;
@@ -23,6 +24,9 @@ const LINE_HEIGHT: f32 = 1.42;
 
 /// 代码的字号是正文的几分之几（旧版 30 / 36）。
 const CODE_SCALE: f32 = 30.0 / 36.0;
+
+/// 表格的字号是正文的几倍（旧版 0.92）。
+const TABLE_SCALE: f32 = 0.92;
 
 /// 代码块左右、上下留的空。
 pub const CODE_PAD: (u32, u32) = (32, 24);
@@ -56,6 +60,8 @@ pub struct Laid {
     pub margin: (u32, u32),
     /// 任务项的勾选框：做没做完、左上角、边长。
     pub task: Option<(bool, (u32, u32), u32)>,
+    /// 表格排好的格子（R-2 中）。
+    pub grid: Option<Grid>,
 }
 
 /// 排一块。
@@ -82,6 +88,21 @@ pub fn lay(system: &mut FontSystem, block: &Block, look: &Look) -> Laid {
         ),
         Kind::Paragraph => ((small, small), (0, 0), 0, 0),
     };
+    if let Some(grid) = block
+        .table
+        .as_ref()
+        .and_then(|found| table::lay(system, found, look))
+    {
+        return Laid {
+            kind: block.kind,
+            buffer: None,
+            inset,
+            height: grid.height,
+            margin,
+            task: None,
+            grid: Some(grid),
+        };
+    }
     if block.kind == Kind::Rule {
         return Laid {
             kind: block.kind,
@@ -90,6 +111,7 @@ pub fn lay(system: &mut FontSystem, block: &Block, look: &Look) -> Laid {
             height: font,
             margin,
             task: None,
+            grid: None,
         };
     }
     let line = units::ceil(size * LINE_HEIGHT);
@@ -119,24 +141,39 @@ pub fn lay(system: &mut FontSystem, block: &Block, look: &Look) -> Laid {
         height,
         margin,
         task,
+        grid: None,
     }
 }
 
 /// 排字：每一段字照它的样子挑字体、颜色、字号。
 fn shape(system: &mut FontSystem, block: &Block, look: &Look, width: u32) -> Buffer {
-    let base = metrics(block.kind, Style::default(), look.size);
+    rich(system, &block.spans, block.kind, look, Some(width), None)
+}
+
+/// 一串字排成一块（表格的格子也用它）：`width` 是空的不折行（量一列不折行要多宽），`align` 是这一块怎么对齐。
+pub fn rich(
+    system: &mut FontSystem,
+    spans: &[Span],
+    kind: Kind,
+    look: &Look,
+    width: Option<u32>,
+    align: Option<Align>,
+) -> Buffer {
+    let base = metrics(kind, Style::default(), look.size);
     let mut buffer = Buffer::new(system, base);
-    buffer.set_size(Some(units::float(width)), None);
-    buffer.set_wrap(Wrap::WordOrGlyph);
-    let rows = table_rows(block);
-    let source = if rows.is_empty() { &block.spans } else { &rows };
-    let pieces = cjk_apart(source, block.kind == Kind::Code);
+    buffer.set_size(width.map(units::float), None);
+    buffer.set_wrap(if width.is_some() {
+        Wrap::WordOrGlyph
+    } else {
+        Wrap::None
+    });
+    let pieces = cjk_apart(spans, kind == Kind::Code);
     let spans: Vec<(&str, Attrs)> = pieces
         .iter()
-        .map(|(text, style, cjk)| (text.as_str(), attrs(block.kind, *style, *cjk, look)))
+        .map(|(text, style, cjk)| (text.as_str(), attrs(kind, *style, *cjk, look)))
         .collect();
-    let default = attrs(block.kind, Style::default(), false, look);
-    buffer.set_rich_text(spans, &default, Shaping::Advanced, None);
+    let default = attrs(kind, Style::default(), false, look);
+    buffer.set_rich_text(spans, &default, Shaping::Advanced, align);
     buffer.shape_until_scroll(system, true);
     buffer
 }
@@ -166,47 +203,13 @@ fn is_cjk(ch: char) -> bool {
     )
 }
 
-/// 表格先一行一行写成字（格子之间 ` | `），R-2 中起画成格子。不是表格的是空的。
-fn table_rows(block: &Block) -> Vec<Span> {
-    let Some(table) = block.table.as_ref() else {
-        return Vec::new();
-    };
-    let mut spans = Vec::new();
-    let rows = std::iter::once(&table.header)
-        .chain(table.rows.iter())
-        .filter(|row| !row.is_empty());
-    for (index, row) in rows.enumerate() {
-        if index > 0 {
-            spans.push(Span {
-                text: "\n".into(),
-                style: Style::default(),
-            });
-        }
-        for (column, cell) in row.iter().enumerate() {
-            if column > 0 {
-                spans.push(Span {
-                    text: " | ".into(),
-                    style: Style {
-                        muted: true,
-                        ..Style::default()
-                    },
-                });
-            }
-            spans.extend(cell.iter().map(|span| Span {
-                text: span.text.replace('\n', " "),
-                style: span.style,
-            }));
-        }
-    }
-    spans
-}
-
 /// 这一种块、这一段字的字号和行高。
 fn metrics(kind: Kind, style: Style, size: f32) -> Metrics {
     let size = match kind {
         Kind::Heading(level) => size * heading_scale(level),
         Kind::Code => size * CODE_SCALE,
         _ if style.code => size * CODE_SCALE,
+        Kind::Table => size * TABLE_SCALE,
         _ => size,
     };
     Metrics::new(size, (size * LINE_HEIGHT).ceil())

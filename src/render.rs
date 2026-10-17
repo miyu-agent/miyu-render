@@ -7,6 +7,7 @@
 mod draw;
 mod layout;
 mod paint;
+mod table;
 mod units;
 
 use std::cell::RefCell;
