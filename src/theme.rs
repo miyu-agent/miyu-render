@@ -27,6 +27,15 @@ impl Theme {
         }
     }
 
+    /// 名字：同 [`Theme::parse`] 认的。
+    pub fn name(self) -> &'static str {
+        match self {
+            Theme::Paper => "paper",
+            Theme::Light => "light",
+            Theme::Dark => "dark",
+        }
+    }
+
     /// 这一套的六个颜色。
     pub fn palette(self) -> Palette {
         match self {

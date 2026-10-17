@@ -33,6 +33,8 @@ ratex-render = { version = "0.1.14", features = ["embed-fonts"] }
 # 代码着色（设计 36 第四节第 5 条）：纯 Rust 的正则（fancy-regex），三个平台不用编 C；只要它认语言、切词，颜色照页面的配色调，
 # 不用它自带的主题。
 syntect = { version = "5", default-features = false, features = ["default-syntaxes", "regex-fancy", "parsing"] }
+# render_image 存图的文件名里的内容哈希：跨版本不变（标准库的哈希不保证），依赖树里本来就有。
+sha2 = "0.11"
 # 画布和 PNG：只开 PNG。
 image = { version = "0.25", default-features = false, features = ["png"] }
 

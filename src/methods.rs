@@ -78,17 +78,40 @@ pub fn call(state: &State, request: &Value) -> Answer {
     }
 }
 
-fn markdown(state: &State, params: &Value) -> Answer {
-    let text = params["markdown"]
-        .as_str()
+/// 这一刻的配置（拷一份：画的时候配置换了不影响这一张）。
+pub fn settings(state: &State) -> Settings {
+    locked(&state.settings).clone()
+}
+
+/// 要画的字：空的、太长的交回为什么不画（英文一句，`markdown` 方法和工具共用）。
+pub fn checked(text: Option<&str>) -> Result<&str, String> {
+    let text = text
         .filter(|text| !text.trim().is_empty())
-        .ok_or_else(|| bad("markdown is required"))?;
+        .ok_or("markdown is required")?;
     if text.chars().count() > MAX_CHARS {
-        return Err(bad(&format!(
-            "markdown is longer than {MAX_CHARS} characters"
-        )));
+        return Err(format!("markdown is longer than {MAX_CHARS} characters"));
     }
-    let settings = locked(&state.settings).clone();
+    Ok(text)
+}
+
+/// 照 `settings` 和配色画 `text`，失败的交回为什么（英文一句）。
+pub fn pages(
+    state: &State,
+    text: &str,
+    settings: &Settings,
+    theme: Theme,
+) -> Result<Vec<Page>, String> {
+    let style = Style {
+        palette: theme.palette(),
+        font_size: settings.font_size,
+    };
+    let fonts = (settings.font.clone(), settings.code_font.clone());
+    draw(state, text.to_string(), fonts, style)
+}
+
+fn markdown(state: &State, params: &Value) -> Answer {
+    let text = checked(params["markdown"].as_str()).map_err(|why| bad(&why))?;
+    let settings = settings(state);
     let theme = match &params["theme"] {
         Value::Null => settings.theme,
         Value::String(name) => {
@@ -96,12 +119,7 @@ fn markdown(state: &State, params: &Value) -> Answer {
         }
         _ => return Err(bad("theme is paper, light or dark")),
     };
-    let style = Style {
-        palette: theme.palette(),
-        font_size: settings.font_size,
-    };
-    let fonts = (settings.font.clone(), settings.code_font.clone());
-    let pages = draw(state, text.to_string(), fonts, style)?;
+    let pages = pages(state, text, &settings, theme).map_err(|why| failed(&why))?;
     let mut answered = Vec::with_capacity(pages.len());
     for (index, page) in pages.iter().enumerate() {
         let name = format!("render-{}.png", index + 1);
@@ -126,7 +144,7 @@ fn draw(
     text: String,
     (body, code): (Option<String>, Option<String>),
     style: Style,
-) -> Result<Vec<Page>, Value> {
+) -> Result<Vec<Page>, String> {
     let (engine, fonts) = (Arc::clone(&state.engine), Arc::clone(&state.fonts));
     let (tell, answer) = mpsc::channel();
     std::thread::spawn(move || {
@@ -151,11 +169,11 @@ fn draw(
     });
     match answer.recv_timeout(state.limit) {
         Ok(Ok(Ok(Some(Ok(pages))))) => Ok(pages),
-        Ok(Ok(Ok(Some(Err(too_long))))) => Err(failed(&too_long.to_string())),
-        Ok(Ok(Err(error))) => Err(failed(&error.to_string())),
-        Ok(Ok(Ok(None))) => Err(failed("renderer not ready")),
-        Ok(Err(_)) => Err(failed("the renderer crashed")),
-        Err(_) => Err(failed("took too long to draw")),
+        Ok(Ok(Ok(Some(Err(too_long))))) => Err(too_long.to_string()),
+        Ok(Ok(Err(error))) => Err(error.to_string()),
+        Ok(Ok(Ok(None))) => Err("renderer not ready".into()),
+        Ok(Err(_)) => Err("the renderer crashed".into()),
+        Err(_) => Err("took too long to draw".into()),
     }
 }
 

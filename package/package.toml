@@ -15,8 +15,8 @@ about = { en = "Render package", zh = "渲染", ja = "レンダリング" }
 [process]
 args = ["serve"]
 start = "always"
-# R-1 只有给别的软件调的方法；render_image 工具随 R-6 加 tools。
-capabilities = []
+# tools：render_image 一件（设计 36 第五节）。
+capabilities = ["tools"]
 
 # 给别的软件调（核心施工 X-18）：接入QQ 的长文转图经它画。
 [export]

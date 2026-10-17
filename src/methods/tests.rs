@@ -2,61 +2,15 @@
 //! 太久不等；`theme` 照写的、不写照配置；写错的
 //! `bad_params`（-32602）；字体一个有中文的都没有、`blob.put` 不成的回失败（-32010）；登记的名字；不认识的方法。
 
-use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
-use cosmic_text::fontdb::Database;
 use serde_json::{Value, json};
 
 use super::*;
-use crate::fonts::Generic;
-
-/// 假核心：记下 `blob.put` 收到的，回一个编号；`refuse` 的一律回错。
-struct Fake {
-    put: Mutex<Vec<Value>>,
-    refuse: bool,
-}
-
-impl Core for Fake {
-    fn call(&self, method: &str, params: &Value) -> Answer {
-        assert_eq!(method, "blob.put");
-        if self.refuse {
-            return Err(json!({"code": -32010, "message": "disk full"}));
-        }
-        self.put.lock().expect("没 panic").push(params.clone());
-        Ok(json!({"blob": "b1", "kind": "image", "media_type": "image/png"}))
-    }
-}
-
-/// 测试字体做的字体库：`files` 是 `tests/fonts/` 里的。
-fn fonts(files: &'static [&'static str]) -> Fonts {
-    Arc::new(move || {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fonts");
-        let mut database = Database::new();
-        for file in files {
-            database.load_font_file(dir.join(file)).expect("读得出");
-        }
-        (database, Generic::default())
-    })
-}
-
-fn setup(refuse: bool, files: &'static [&'static str]) -> (State, Arc<Fake>) {
-    let fake = Arc::new(Fake {
-        put: Mutex::new(Vec::new()),
-        refuse,
-    });
-    let state = State {
-        settings: Mutex::new(crate::settings::Settings::default()),
-        engine: Arc::new(Mutex::new(None)),
-        core: Arc::clone(&fake) as Arc<dyn Core>,
-        fonts: fonts(files),
-        limit: TIME_LIMIT,
-    };
-    (state, fake)
-}
+use crate::test_support::{Fake, fonts, setup};
 
 fn markdown(state: &State, params: &Value) -> Answer {
     call(

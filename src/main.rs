@@ -5,7 +5,10 @@ mod markdown;
 mod methods;
 mod render;
 mod settings;
+#[cfg(test)]
+mod test_support;
 mod theme;
+mod tools;
 mod wire;
 
 use std::io::{self, BufRead};
@@ -34,7 +37,7 @@ fn system_fonts() -> (Database, fonts::Generic) {
     (database, fonts::system::generic())
 }
 
-/// 跑起来：握手、登记方法，然后照核心发来的办，标准输入读到头就退出。
+/// 跑起来：握手、登记方法和工具，然后照核心发来的办，标准输入读到头就退出。
 fn serve() -> ExitCode {
     let wire = Arc::new(Wire::new(Box::new(io::stdout())));
     let state = Arc::new(State {
@@ -64,6 +67,10 @@ fn serve() -> ExitCode {
         eprintln!("package.methods refused: {error}");
         return ExitCode::from(2);
     }
+    if let Err(error) = wire.call("provide", &tools::provide()) {
+        eprintln!("provide refused: {error}");
+        return ExitCode::from(2);
+    }
     drop(reading.join());
     ExitCode::SUCCESS
 }
@@ -80,7 +87,7 @@ fn configure(state: &State, keys: &serde_json::Map<String, Value>) {
     }
 }
 
-/// 读核心发来的：回应交给等它的，请求各开一个线程办，通知当场办。
+/// 读核心发来的：回应交给等它的，请求各开一个线程办，通知当场办（`tool.cancel` 不理：一张图至多画 30 秒，画完照回）。
 fn read(wire: &Arc<Wire>, state: &Arc<State>) {
     for line in io::stdin().lock().lines() {
         let Ok(line) = line else { break };
@@ -98,6 +105,7 @@ fn read(wire: &Arc<Wire>, state: &Arc<State>) {
                 std::thread::spawn(move || {
                     let answer = match method.as_str() {
                         "method.call" => methods::call(&state, &params),
+                        "tool.call" => Ok(tools::call(&state, &params)),
                         _ => Err(wire::unknown_method()),
                     };
                     wire.answer(&id, answer);
