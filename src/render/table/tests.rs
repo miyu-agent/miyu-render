@@ -29,6 +29,7 @@ fn grid(markdown: &str) -> Grid {
         size: 36.0,
         body: "Miyu Test CJK",
         code: "Miyu Test Mono",
+        code_chinese: false,
         emoji: None,
         fonts: &FONTS,
     };

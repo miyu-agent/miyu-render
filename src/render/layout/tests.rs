@@ -29,6 +29,7 @@ fn look() -> Look<'static> {
         size: 36.0,
         body: "Miyu Test CJK",
         code: "Miyu Test Mono",
+        code_chinese: false,
         emoji: None,
         fonts: &FONTS,
     }
@@ -128,17 +129,12 @@ fn inline_styles_reach_the_glyphs() {
     );
 }
 
-#[test]
-fn chinese_in_code_uses_the_body_font() {
-    // 等宽字体自带中文（这台机器上的 JetBrains Maple Mono 就是）：中文照样用正文的字体。
+/// 排 `markdown`，交回每个不是空白的字用了哪个字体族、带不带行内代码的记号。
+fn families_of(markdown: &str, look: &Look) -> Vec<(char, String, usize)> {
     let mut system = system();
-    let look = Look {
-        code: "Miyu Test Mono CJK",
-        ..look()
-    };
-    let got: Vec<Laid> = blocks("`代码 code`\n\n```\n你 x\n```")
+    let got: Vec<Laid> = blocks(markdown)
         .iter()
-        .map(|block| lay(&mut system, block, &look))
+        .map(|block| lay(&mut system, block, look))
         .collect();
     let mut seen = Vec::new();
     for laid in &got {
@@ -160,21 +156,48 @@ fn chinese_in_code_uses_the_body_font() {
             }
         }
     }
-    let cjk = "Miyu Test CJK".to_string();
+    seen
+}
+
+#[test]
+fn chinese_in_code_uses_the_code_font_when_it_has_chinese() {
+    // 等宽字体自带中文（这台机器上的 JetBrains Maple Mono 就是）：代码里的中文也用它，和英文按格对齐（2026-10-21 项目主人定，
+    // 改掉 R-2 上「用正文字体」那一条）。
+    let look = Look {
+        code: "Miyu Test Mono CJK",
+        code_chinese: true,
+        ..look()
+    };
     let mono = "Miyu Test Mono CJK".to_string();
     assert_eq!(
-        seen,
+        families_of("`代码 code`\n\n```\n你 x\n```", &look),
         [
-            ('代', cjk.clone(), INLINE_CODE),
-            ('码', cjk.clone(), INLINE_CODE),
+            ('代', mono.clone(), INLINE_CODE),
+            ('码', mono.clone(), INLINE_CODE),
             ('c', mono.clone(), INLINE_CODE),
             ('o', mono.clone(), INLINE_CODE),
             ('d', mono.clone(), INLINE_CODE),
             ('e', mono.clone(), INLINE_CODE),
+            ('你', mono.clone(), 0),
+            ('x', mono, 0),
+        ],
+        "中日韩字用代码字体、照样垫代码的底；代码块不垫"
+    );
+}
+
+#[test]
+fn chinese_in_code_falls_back_to_the_body_font_without_chinese() {
+    let cjk = "Miyu Test CJK".to_string();
+    let mono = "Miyu Test Mono".to_string();
+    assert_eq!(
+        families_of("`代 c`\n\n```\n你 x\n```", &look()),
+        [
+            ('代', cjk.clone(), INLINE_CODE),
+            ('c', mono.clone(), INLINE_CODE),
             ('你', cjk, 0),
             ('x', mono, 0),
         ],
-        "中日韩字用正文字体、照样垫代码的底；代码块不垫"
+        "代码字体没有中文的，中日韩字回退正文字体、照样垫代码的底"
     );
 }
 

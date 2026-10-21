@@ -50,6 +50,8 @@ pub struct Look<'a> {
     pub size: f32,
     pub body: &'a str,
     pub code: &'a str,
+    /// 代码字体有没有中文：有的代码里的中日韩字用它，没有的用正文字体。
+    pub code_chinese: bool,
     /// 彩色表情字体，字体库里没有的是空的（照正文字体排）。
     pub emoji: Option<&'a str>,
     /// 字体库（画 mermaid 图的字用，R-3）。
@@ -304,6 +306,7 @@ fn attrs<'a>(kind: Kind, style: Style, script: Script, look: &Look<'a>) -> Attrs
     let family = match script {
         Script::Emoji => look.emoji.unwrap_or(look.body),
         Script::Plain if code => look.code,
+        Script::Cjk if look.code_chinese => look.code,
         Script::Cjk | Script::Plain => look.body,
     };
     let colour = match style.token {

@@ -3,6 +3,7 @@
 //! - 配置里写了的照写的；没写的照系统的通用名（[`system`]：Linux 问 fontconfig，macOS、Windows 照默认的名字）。
 //! - 字体库里没有的名字跳过，照下一个；都没有的：正文另找一个有中文的，代码照正文。
 //! - 正文挑到的不含中文的，换成字体库里一个有中文的（名字带 `Sans`、`Hei` 的优先）；一个都没有的报错，说清楚该装什么，不下载。
+//! - 记下代码字体有没有中文：有的代码里的中文也用它（2026-10-21 项目主人定），没有的回退正文。
 //!
 //! 挑法是纯逻辑，字体库经 [`Catalog`] 问：测试换成测试字体，不靠跑测试的机器装了什么。
 
@@ -34,6 +35,8 @@ pub struct Families {
     pub body: String,
     /// 代码。
     pub code: String,
+    /// 代码字体有没有中文：有的代码里的中日韩字也用它，和英文按格对齐；没有的回退正文。
+    pub code_chinese: bool,
     /// 彩色表情：字体库里有的话。表情字明确交给它，不让排字自己挑（粗体的标题里会挑到黑白的表情字体）。
     pub emoji: Option<String>,
     /// 挑的时候换过的一句（写进运行日志）：正文想用的不含中文、换成了有中文的。
@@ -104,10 +107,12 @@ pub fn resolve(
         None => (chinese().ok_or(FontError::NoChinese)?, None),
     };
     let code = first(code, &generic.mono).unwrap_or_else(|| body.clone());
+    let code_chinese = catalog.covers_chinese(&code);
     let emoji = first(None, &generic.emoji);
     Ok(Families {
         body,
         code,
+        code_chinese,
         emoji,
         note,
     })

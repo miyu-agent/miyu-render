@@ -1,5 +1,5 @@
 //! 挑字体：写了的、系统的通用名照先后；没有的名字跳过；正文不含中文的换成有中文的（黑体、无衬线优先）；一个有中文的都没有报错；
-//! 代码没有的照正文；大小写不论；空的名字当没写。字体库是假的（只说有哪些族、哪个有中文）。
+//! 代码没有的照正文；代码字体有没有中文；大小写不论；空的名字当没写。字体库是假的（只说有哪些族、哪个有中文）。
 
 use super::*;
 
@@ -128,4 +128,21 @@ fn the_colour_emoji_font_is_picked_when_installed() {
     with.0.push(("Noto Color Emoji", false));
     let got = resolve(&with, None, None, &generic(&["Noto Sans CJK SC"], &[])).expect("挑得出");
     assert_eq!(got.emoji.as_deref(), Some("Noto Color Emoji"));
+}
+
+#[test]
+fn whether_the_code_font_has_chinese_is_told() {
+    let mut fonts = machine();
+    fonts.0.push(("JetBrains Maple Mono", true));
+    let system = generic(&["Noto Sans CJK SC"], &["JetBrains Maple Mono"]);
+    let got = resolve(&fonts, None, None, &system).expect("挑得出");
+    assert_eq!(
+        (got.code.as_str(), got.code_chinese),
+        ("JetBrains Maple Mono", true)
+    );
+    let got = resolve(&fonts, None, Some("JetBrains Mono"), &system).expect("挑得出");
+    assert_eq!(
+        (got.code.as_str(), got.code_chinese),
+        ("JetBrains Mono", false)
+    );
 }

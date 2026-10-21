@@ -108,6 +108,7 @@ impl Engine {
             size: units::float(style.font_size),
             body: &self.families.body,
             code: &self.families.code,
+            code_chinese: self.families.code_chinese,
             emoji: self.families.emoji.as_deref(),
             fonts: &self.fonts,
         };
