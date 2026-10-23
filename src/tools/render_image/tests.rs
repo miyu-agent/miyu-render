@@ -322,3 +322,19 @@ fn an_empty_pictures_falls_back_to_the_workspace() {
         "{text}"
     );
 }
+
+#[test]
+fn a_pictures_file_is_not_a_folder() {
+    let (state, _) = setup(false, &["cjk.otf"]);
+    let dir = workspace();
+    let pictures = workspace().join("pictures");
+    fs::write(&pictures, "not a folder").expect("写得了");
+    let mut call = params(&dir, &json!({"markdown": "a"}));
+    call["pictures"] = json!(pictures.to_str().expect("UTF-8"));
+    let refused = run(&state, &call).expect_err("不是文件夹");
+    assert!(
+        refused.starts_with("Cannot create the pictures folder"),
+        "{refused}"
+    );
+    assert_eq!(fs::read_to_string(&pictures).expect("在"), "not a folder");
+}

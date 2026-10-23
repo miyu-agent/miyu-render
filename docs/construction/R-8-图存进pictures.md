@@ -23,3 +23,7 @@
 ### 验收
 
 本机门禁（格式、clippy、文档、测试、行数）；三台 CI。
+
+### 补（R-8 补，主会话审 R-8 时提的）
+
+`saved::pictures` 原来不是文件夹的一律报「is a link」，是普通文件时这句话不对。分开报：链接的照旧 `The pictures folder is a link.`，别的 `The pictures folder is not a folder.`。实际上普通文件在建目录时就报错（`Cannot create the pictures folder: …`），新那句是兜底；测试 `a_pictures_file_is_not_a_folder` 守住普通文件被拒、原文件不动。登记簿那一行补上新的一句（8）。

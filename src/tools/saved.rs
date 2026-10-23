@@ -39,14 +39,18 @@ pub fn folder(workspace: &Path) -> Result<PathBuf, String> {
     Ok(real)
 }
 
-/// 核心给的放图目录：没有的连上层一起建；它本身是链接的不用（核心给的是真实位置，上层是主人自己的、不另查）。
+/// 核心给的放图目录：没有的连上层一起建；它本身是链接的、不是文件夹的不用（核心给的是真实位置，上层是主人自己的、不另查）。
+/// 是普通文件的建的时候就报错，「不是文件夹」那句是兜底。
 pub fn pictures(folder: &Path) -> Result<PathBuf, String> {
     fs::create_dir_all(folder)
         .map_err(|error| format!("Cannot create the pictures folder: {error}."))?;
     let meta = fs::symlink_metadata(folder)
         .map_err(|error| format!("Cannot open the pictures folder: {error}."))?;
-    if !meta.is_dir() {
+    if meta.is_symlink() {
         return Err("The pictures folder is a link.".to_string());
+    }
+    if !meta.is_dir() {
+        return Err("The pictures folder is not a folder.".to_string());
     }
     Ok(folder.to_path_buf())
 }

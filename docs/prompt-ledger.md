@@ -8,6 +8,6 @@
 | 结果：每一页一行 | `src/tools/render_image.rs` | 画成了 | 每页约 20 到 30（工作区的按 `/w/rendered/render-<12 位>-1.png 1088x413` 18；家目录的看数据根有多长，`/home/u/.miyu/home/owner/pictures/…` 26） | 路径给她调 `show`，长宽让她知道图多大；同一份字、同样的配置画过的交回原来的文件 |
 | 报错：参数 | `src/tools/render_image.rs` | 两个都给了、都没给 | 8、5 | `Give markdown or path, not both.`、`Give markdown or path.` |
 | 报错：`path` | `src/tools/render_image.rs` | 工作区外、不是 `.md`、太大、读不出 | 约 6 到 17 | 说清哪一条不行，她能换个做法（把字直接给、挪进工作区） |
-| 报错：存图 | `src/tools/saved.rs` | `rendered/` 建不了、指到工作区外、写不进；`pictures` 建不了、是链接（`The pictures folder is a link.` 7） | 约 7 到 15 | 同上 |
+| 报错：存图 | `src/tools/saved.rs` | `rendered/` 建不了、指到工作区外、写不进；`pictures` 建不了、是链接（`The pictures folder is a link.` 7） | 约 7 到 15（`The pictures folder is not a folder.` 8，兜底，正常走不到：是普通文件的建的时候就报错） | 同上 |
 | 报错：画 | `src/methods.rs` 交回的原因，首字母大写、加句号 | 太长、没有中文字体、画崩了、太久 | 约 5 到 25 | 和 `markdown` 方法同一句；没有中文字体的那句说清该装什么 |
 | 报错：没有工作区、不认识的工具名 | `src/tools.rs`、`src/tools/render_image.rs` | 核心没给 `cwd`、工具名对不上 | 6、约 6 | 兜底，正常走不到 |
