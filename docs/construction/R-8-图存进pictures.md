@@ -1,6 +1,6 @@
 ## 施工单 R-8：画的图存进主人家目录的 pictures
 
-状态：在做（本机门禁、5 个变异全抓到：去掉链接检查、不建目录、路径照工作区写、不认 `pictures`、空的不回退——最后一条起先活下来，补了 `an_empty_pictures_falls_back_to_the_workspace`）。
+状态：已合（2026-10-23，run 39904548815）。本机门禁、5 个变异全抓到：去掉链接检查、不建目录、路径照工作区写、不认 `pictures`、空的不回退——最后一条起先活下来，补了 `an_empty_pictures_falls_back_to_the_workspace`。
 
 ### 目的
 
