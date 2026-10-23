@@ -1,4 +1,4 @@
-//! `render_image`：画好的图存进这一轮的工作区（`rendered/render-<哈希前 12 位>-<页>.png`），交回每一页的路径和长宽，不交给核心、
+//! `render_image`：画好的图存进核心给的 `pictures`，没给的存这一轮的工作区（`rendered/`），文件名 `render-<哈希前 12 位>-<页>.png`，交回每一页的路径和长宽，不交给核心、
 //! 不发给谁（2026-10-17 项目主人定：发不发、怎么发是她的事）。同一份字、同样的配置画过的不重画。
 //!
 //! 这个进程不在沙盒里，场所会话只碰得到自己的工作区：读的 `.md` 和存图的文件夹都照真实的位置认，要在工作区里。
@@ -29,7 +29,16 @@ pub fn run(state: &State, params: &Value) -> Result<String, String> {
     let text = methods::checked(Some(&text)).map_err(|why| format!("{}.", capital(&why)))?;
     let settings = methods::settings(state);
     let key = key(&settings, text);
-    let folder = saved::folder(&workspace)?;
+    let (folder, shown) = match params["pictures"].as_str().filter(|path| !path.is_empty()) {
+        Some(pictures) => (
+            saved::pictures(Path::new(pictures))?,
+            PathBuf::from(pictures),
+        ),
+        None => (
+            saved::folder(&workspace)?,
+            Path::new(cwd).join(saved::FOLDER),
+        ),
+    };
     let found = if let Some(found) = saved::find(&folder, &key) {
         found
     } else {
@@ -37,7 +46,6 @@ pub fn run(state: &State, params: &Value) -> Result<String, String> {
             .map_err(|why| format!("{}.", capital(&why)))?;
         saved::store(&folder, &key, &pages)?
     };
-    let shown = Path::new(cwd).join(saved::FOLDER);
     Ok(found
         .iter()
         .map(|page| {

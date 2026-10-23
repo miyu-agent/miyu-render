@@ -15,7 +15,7 @@ pub const RENDER_IMAGE: &str = "render_image";
 pub fn provide() -> Value {
     json!({"tools": [{
         "name": RENDER_IMAGE,
-        "description": "Draw Markdown as PNG images, with tables, Mermaid diagrams, LaTeX formulas and highlighted code. The images are saved in the workspace and nobody sees them until you show them.",
+        "description": "Draw Markdown as PNG images, with tables, Mermaid diagrams, LaTeX formulas and highlighted code. The images are saved as files and nobody sees them until you show them.",
         "input_schema": {"type": "object", "properties": {
             "markdown": {"type": "string"},
             "path": {"type": "string", "description": "A .md file in the workspace, instead of markdown."}

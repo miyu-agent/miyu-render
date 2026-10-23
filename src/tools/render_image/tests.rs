@@ -265,3 +265,60 @@ fn a_planted_link_is_replaced_not_followed() {
     let meta = fs::symlink_metadata(dir.join("rendered").join(&name)).expect("在");
     assert!(meta.is_file(), "链接换成了图");
 }
+
+#[test]
+fn pages_go_to_the_pictures_folder_when_given() {
+    let (state, _) = setup(false, &["cjk.otf"]);
+    let dir = workspace();
+    let home = workspace();
+    let pictures = home.join("home").join("owner").join("pictures");
+    let mut call = params(&dir, &json!({"markdown": "# 你好"}));
+    call["pictures"] = json!(pictures.to_str().expect("UTF-8"));
+    let text = run(&state, &call).expect("画得出");
+    let got = lines(&text);
+    assert_eq!(got.len(), 1, "{text}");
+    let (path, width, height) = &got[0];
+    assert_eq!(Path::new(path).parent(), Some(pictures.as_path()), "{path}");
+    assert_eq!(
+        image::image_dimensions(path).expect("是 PNG"),
+        (*width, *height)
+    );
+    assert!(!dir.join("rendered").exists(), "工作区里不建 rendered/");
+    let again = run(&state, &call).expect("画得出");
+    assert_eq!(again, text, "画过的不重画");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_linked_pictures_folder_is_refused() {
+    use std::os::unix::fs::symlink;
+    let (state, _) = setup(false, &["cjk.otf"]);
+    let dir = workspace();
+    let elsewhere = workspace();
+    let pictures = workspace().join("pictures");
+    symlink(&elsewhere, &pictures).expect("链接");
+    let mut call = params(&dir, &json!({"markdown": "a"}));
+    call["pictures"] = json!(pictures.to_str().expect("UTF-8"));
+    assert_eq!(
+        run(&state, &call),
+        Err("The pictures folder is a link.".to_string())
+    );
+    assert_eq!(
+        fs::read_dir(&elsewhere).expect("有").count(),
+        0,
+        "别处没多东西"
+    );
+}
+
+#[test]
+fn an_empty_pictures_falls_back_to_the_workspace() {
+    let (state, _) = setup(false, &["cjk.otf"]);
+    let dir = workspace();
+    let mut call = params(&dir, &json!({"markdown": "a"}));
+    call["pictures"] = json!("");
+    let text = run(&state, &call).expect("画得出");
+    assert!(
+        text.starts_with(dir.join("rendered").to_str().expect("UTF-8")),
+        "{text}"
+    );
+}

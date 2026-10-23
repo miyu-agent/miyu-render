@@ -1,4 +1,4 @@
-//! 存图：工作区里的 `rendered/`。一页先写进一个新建的临时文件再改名换上（预先放好的链接只会被换掉，不会被顺着写进去）；
+//! 存图：核心给了 `pictures`（会话属主家目录放图的目录）的存那里，没给的存工作区里的 `rendered/`。一页先写进一个新建的临时文件再改名换上（预先放好的链接只会被换掉，不会被顺着写进去）；
 //! 从最后一页往前写，第一页在就是整套都在。
 
 use std::fs::{self, OpenOptions};
@@ -37,6 +37,18 @@ pub fn folder(workspace: &Path) -> Result<PathBuf, String> {
         return Err(format!("{FOLDER}/ points outside the workspace."));
     }
     Ok(real)
+}
+
+/// 核心给的放图目录：没有的连上层一起建；它本身是链接的不用（核心给的是真实位置，上层是主人自己的、不另查）。
+pub fn pictures(folder: &Path) -> Result<PathBuf, String> {
+    fs::create_dir_all(folder)
+        .map_err(|error| format!("Cannot create the pictures folder: {error}."))?;
+    let meta = fs::symlink_metadata(folder)
+        .map_err(|error| format!("Cannot open the pictures folder: {error}."))?;
+    if !meta.is_dir() {
+        return Err("The pictures folder is a link.".to_string());
+    }
+    Ok(folder.to_path_buf())
 }
 
 /// 画过的：第一页起连着的几页（都是普通文件、读得出长宽）；第一页没有的、有一页是链接的算没画过。
