@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.97"
 publish = false
-license = "GPL-3.0-or-later"
+license = "AGPL-3.0-or-later"
 description = "Miyu 的渲染软件包：把 Markdown 画成图（长文转图、render_image）。"
 
 [[bin]]
