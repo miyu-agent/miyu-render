@@ -24,7 +24,7 @@ methods = ["markdown"]
 
 [settings.theme]
 type = "option"
-options = ["paper", "light", "dark"]
+choices = ["paper", "light", "dark"]
 default = "paper"
 layers = ["system"]
 applies = "now"

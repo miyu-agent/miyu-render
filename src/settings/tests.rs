@@ -45,3 +45,34 @@ fn null_and_wrong_values_fall_back() {
     ));
     assert_eq!((settings.font_size, settings.code_font), (56, None));
 }
+
+/// 清单里一节 `[settings.<名字>]` 的一个键的那一行（只认 `键 = 值` 写在一行的）。
+fn manifest_line(setting: &str, key: &str) -> Option<String> {
+    let manifest = include_str!("../../package/package.toml");
+    let header = format!("[settings.{setting}]");
+    manifest
+        .lines()
+        .skip_while(|line| line.trim() != header)
+        .skip(1)
+        .take_while(|line| !line.trim_start().starts_with('['))
+        .find(|line| {
+            line.split('=')
+                .next()
+                .is_some_and(|name| name.trim() == key)
+        })
+        .map(str::to_string)
+}
+
+#[test]
+fn the_theme_setting_lists_its_choices_the_way_the_core_reads_them() {
+    // 核心的清单只认 `choices`（`miyu_config::package`）；以前写成 `options`，装包时整个清单读不进（R-9）。
+    assert!(manifest_line("theme", "options").is_none(), "不认 options");
+    let line = manifest_line("theme", "choices").expect("theme 写了 choices");
+    for theme in [Theme::Paper, Theme::Light, Theme::Dark] {
+        assert!(
+            line.contains(&format!("\"{}\"", theme.name())),
+            "{line} 少了 {}",
+            theme.name()
+        );
+    }
+}
