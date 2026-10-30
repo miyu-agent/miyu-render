@@ -18,7 +18,7 @@ serde_json = "1"
 # 画好的图经 blob.put 交给核心：字节写成 base64。
 base64 = "0.22"
 # 读 Markdown（设计 36 第三节的图，同旧版）。
-pulldown-cmark = { version = "0.13.4", default-features = false }
+pulldown-cmark = { version = "0.13.5", default-features = false }
 # 排字、画字形（同旧版）：字体库 fontdb 随它来，`cosmic_text::fontdb`。
 cosmic-text = { version = "0.19.0", default-features = false, features = ["std", "swash"] }
 # mermaid（设计 36 第四节第 2 条，同旧版）：出 SVG，配色照页面；不要它的命令行和它自己出 PNG 的那一套。

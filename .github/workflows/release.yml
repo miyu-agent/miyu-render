@@ -60,6 +60,8 @@ jobs:
           rm -rf dist && mkdir -p dist/miyu-render/bin
           cp -R package/. dist/miyu-render/
           cp "target/release/miyu-render$exe" "dist/miyu-render/bin/miyu-render$exe"
+          # 本仓库的许可证随包发（LIC-2，发布前审计 10-30）：目标码要附一份 AGPL。
+          cp LICENSE dist/miyu-render/LICENSE
           # 结构不对就不发：清单、程序都要在。
           for need in package.toml "bin/miyu-render$exe"; do
             [ -f "dist/miyu-render/$need" ] || { echo "包里少了 miyu-render/$need"; exit 1; }
