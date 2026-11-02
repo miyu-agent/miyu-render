@@ -46,7 +46,7 @@ pub fn setup(refuse: bool, files: &'static [&'static str]) -> (State, Arc<Fake>)
     });
     let state = State {
         settings: Mutex::new(crate::settings::Settings::default()),
-        engine: Arc::new(Mutex::new(None)),
+        engine: Arc::new(crate::methods::Pool::default()),
         core: Arc::clone(&fake) as Arc<dyn Core>,
         fonts: fonts(files),
         limit: TIME_LIMIT,

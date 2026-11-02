@@ -7,11 +7,13 @@
 //!   误差、思维导图没有那个方块时就露出白底（09-22、09-24）。
 //! - 大小（同旧版）：图里的字缩到 24 像素，宽不超过一栏、高不超过 2200；间距收紧（节点 24、层 36），思维导图用树状。
 //! - 字体和正文一样：图里的字先用正文的字体族，字体库就是排字的那一份。
+//! - 规模（审计第四轮 R-2）：排版没有时限，也停不下来，稠密的图越大越慢（调试版 25 个节点两两连、600 条边 134 秒，发行版
+//!   1700 条边 333 秒）。先读一遍数节点和边，多过 [`MAX_NODES`]、[`MAX_EDGES`] 的不排，照代码块画；这么多也画不进一栏、看不清。
 
 use std::sync::Arc;
 
 use image::RgbaImage;
-use mermaid_rs_renderer::{LayoutConfig, RenderOptions, Theme};
+use mermaid_rs_renderer::{LayoutConfig, Theme};
 use resvg::tiny_skia::{Pixmap, Transform};
 use resvg::usvg;
 
@@ -26,7 +28,13 @@ pub const MAX_HEIGHT: u32 = 2200;
 /// 源码最长多少（同旧版）。
 const MAX_SOURCE: usize = 64 * 1024;
 
-/// 画一张图：画不出来（写错了、空的、太长、画成空的）的交回空的，调的一方照代码块画。空的围栏读的时候就不成块，渲染器也不收空字。
+/// 一张图最多几个节点（一条链 300 个，调试版排 3 秒）。
+const MAX_NODES: usize = 200;
+
+/// 一张图最多几条边（最慢的是两两连的：调试版 210 条 30 秒、380 条 57 秒；状态图 200 条转移 16 秒）。
+const MAX_EDGES: usize = 200;
+
+/// 画一张图：画不出来（写错了、空的、太长、节点或边太多、画成空的）的交回空的，调的一方照代码块画。空的围栏读的时候就不成块，渲染器也不收空字。
 pub fn draw(
     source: &str,
     palette: &Palette,
@@ -37,12 +45,14 @@ pub fn draw(
     if source.len() > MAX_SOURCE {
         return None;
     }
-    let theme = theme(palette, body);
-    let options = RenderOptions {
-        theme: theme.clone(),
-        layout: layout(palette),
-    };
-    let svg = mermaid_rs_renderer::render_with_options(source, options).ok()?;
+    let parsed = mermaid_rs_renderer::parse_mermaid_strict(source).ok()?;
+    if parsed.graph.nodes.len() > MAX_NODES || parsed.graph.edges.len() > MAX_EDGES {
+        return None;
+    }
+    let (theme, layout) = (theme(palette, body), layout(palette));
+    // 同 `render_with_options`，只是先读出来数过。
+    let laid = mermaid_rs_renderer::compute_layout(&parsed.graph, &theme, &layout);
+    let svg = mermaid_rs_renderer::render_svg(&laid, &theme, &layout);
     let svg = transparent(&svg, &theme.background)?;
     raster(&svg, body, fonts, theme.font_size, max_width)
 }

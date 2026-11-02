@@ -180,3 +180,56 @@ fn a_diagram_never_draws_a_file_from_the_disk() {
     });
     assert_eq!(red, 0, "本机的文件画进了图：{red} 个红点");
 }
+
+/// 审计第四轮：mermaid 的排版没有时限，源码只限 64 KB（实际被两万字的上限管着）。六十个节点、一千七百来条边（一万九千字）的
+/// 流程图在发行版里排了 333 秒，一千五百条边的一条链 10 秒、状态图 12 秒（实测）。`methods::draw` 30 秒不等了，可画的线程停不下来，
+/// 一直拿着画的那一套的锁（见 `methods::tests::a_drawing_that_ran_over_does_not_hold_up_the_next`）。图的大小（节点、边）该有上限，
+/// 或者排版本身限时。
+#[test]
+fn a_dense_diagram_is_given_up_within_the_time_limit() {
+    let mut source = String::from("graph LR\n");
+    'all: for from in 0..60 {
+        for to in 0..60 {
+            if from != to {
+                writeln!(source, "n{from}-->n{to}").expect("写进字符串不会失败");
+                if source.len() > 19_000 {
+                    break 'all;
+                }
+            }
+        }
+    }
+    let (tell, done) = std::sync::mpsc::channel();
+    let fonts = fonts();
+    std::thread::spawn(move || {
+        let image = draw(
+            &source,
+            &Theme::Paper.palette(),
+            "Miyu Test CJK",
+            &fonts,
+            960,
+        );
+        drop(tell.send(image));
+    });
+    let limit = crate::methods::TIME_LIMIT;
+    let answered = done.recv_timeout(limit);
+    assert!(answered.is_ok(), "一张图 {limit:?} 还没排完");
+}
+
+/// 节点、边多过上限的不排（排版停不下来，越大越慢）：[`MAX_NODES`] 个节点的一条链照画，多一个不画；两个节点之间连
+/// [`MAX_EDGES`] 加一条的不画。
+#[test]
+fn too_many_nodes_or_edges_are_not_drawn() {
+    let chain = |nodes: usize| {
+        let mut source = String::from("graph TD\n");
+        for node in 1..nodes {
+            writeln!(source, "n{}-->n{node}", node - 1).expect("写进字符串不会失败");
+        }
+        source
+    };
+    let palette = Theme::Paper.palette();
+    let drawn = |source: &str| draw(source, &palette, "Miyu Test CJK", &fonts(), 960).is_some();
+    assert!(drawn(&chain(MAX_NODES)), "正好上限照画");
+    assert!(!drawn(&chain(MAX_NODES + 1)), "多一个节点不画");
+    let parallel = format!("graph TD\n{}", "a-->b\n".repeat(MAX_EDGES + 1));
+    assert!(!drawn(&parallel), "多一条边不画");
+}

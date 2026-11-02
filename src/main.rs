@@ -42,7 +42,7 @@ fn serve() -> ExitCode {
     let wire = Arc::new(Wire::new(Box::new(io::stdout())));
     let state = Arc::new(State {
         settings: Mutex::new(Settings::default()),
-        engine: Arc::new(Mutex::new(None)),
+        engine: Arc::new(methods::Pool::default()),
         core: Arc::clone(&wire) as Arc<dyn methods::Core>,
         fonts: Arc::new(system_fonts),
         limit: methods::TIME_LIMIT,
@@ -83,11 +83,12 @@ fn configure(state: &State, keys: &serde_json::Map<String, Value>) {
         .unwrap_or_else(PoisonError::into_inner)
         .apply(keys);
     if fonts_moved {
-        *state.engine.lock().unwrap_or_else(PoisonError::into_inner) = None;
+        state.engine.forget();
     }
 }
 
-/// 读核心发来的：回应交给等它的，请求各开一个线程办，通知当场办（`tool.cancel` 不理：一张图至多画 30 秒，画完照回）。
+/// 读核心发来的：回应交给等它的，请求各开一个线程办，通知当场办。`tool.cancel` 不理：一个请求连排队至多等 30 秒，画的那一套
+/// 没人要了还在画的有上限（`methods::Pool`），等的线程不会越攒越多。
 fn read(wire: &Arc<Wire>, state: &Arc<State>) {
     for line in io::stdin().lock().lines() {
         let Ok(line) = line else { break };

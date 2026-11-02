@@ -164,3 +164,57 @@ fn too_slow_gives_up() {
     let error = markdown(&state, &json!({"markdown": "你好"})).expect_err("太久");
     assert_eq!(error["message"], "took too long to draw");
 }
+
+/// 审计第四轮（2026-11-02）：超时的那一张不等了，可画它的线程还拿着 `engine` 的锁一直画到完；后来的请求各开一个线程，排在锁后面，
+/// 等锁的时间也算进它自己的限时：一句「你好」也跟着交回「太久」。一张画不完的（或画得极慢的）能让后面所有的都超时，排队的线程
+/// 也一个个攒着。
+#[test]
+fn a_drawing_that_ran_over_does_not_hold_up_the_next() {
+    let (mut state, _) = setup(false, &["cjk.otf"]);
+    state.limit = Duration::from_secs(1);
+    assert!(
+        markdown(&state, &json!({"markdown": "你好"})).is_ok(),
+        "短的一句一秒画得完"
+    );
+    // 调试版两万个字要画二十几秒：超时。
+    let error = markdown(&state, &json!({"markdown": "字".repeat(MAX_CHARS)})).expect_err("太久");
+    assert_eq!(error["message"], "took too long to draw");
+    let next = markdown(&state, &json!({"markdown": "你好"}));
+    assert!(next.is_ok(), "前一张超时了，后一句短的也跟着超时：{next:?}");
+}
+
+/// 没人要了还在画的占满了（字体库读不完，前几张都超时），又没有闲着的那一套：下一张当场回忙，不排队、不另开；读完了、还回来
+/// 以后照常画。
+#[test]
+fn strays_fill_up_and_the_next_is_told_busy() {
+    let (mut state, _) = setup(false, &["cjk.otf"]);
+    state.limit = Duration::from_millis(200);
+    let gate = Arc::new(std::sync::Mutex::new(()));
+    let held = gate.lock().expect("没 panic");
+    let (good, waiting) = (fonts(&["cjk.otf"]), Arc::clone(&gate));
+    state.fonts = Arc::new(move || {
+        drop(waiting.lock());
+        good()
+    });
+    for _ in 0..pool::MAX_STRAY {
+        let error = markdown(&state, &json!({"markdown": "你好"})).expect_err("读不完字体库");
+        assert_eq!(error["message"], "took too long to draw");
+    }
+    let error = markdown(&state, &json!({"markdown": "你好"})).expect_err("忙");
+    assert_eq!(error["message"], "the renderer is busy");
+    drop(held);
+    state.limit = Duration::from_mins(5);
+    // 前几张读完字体库、画完还回来以后才不忙。
+    let answer = (0..200).find_map(|_| {
+        let answer = markdown(&state, &json!({"markdown": "你好"}));
+        if answer
+            .as_ref()
+            .is_err_and(|error| error["message"] == "the renderer is busy")
+        {
+            std::thread::sleep(Duration::from_millis(50));
+            return None;
+        }
+        Some(answer)
+    });
+    assert!(answer.is_some_and(|answer| answer.is_ok()), "读完了照常画");
+}

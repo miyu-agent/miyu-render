@@ -9,5 +9,5 @@
 | 报错：参数 | `src/tools/render_image.rs` | 两个都给了、都没给 | 8、5 | `Give markdown or path, not both.`、`Give markdown or path.` |
 | 报错：`path` | `src/tools/render_image.rs` | 工作区外、不是 `.md`、太大、读不出 | 约 6 到 17 | 说清哪一条不行，她能换个做法（把字直接给、挪进工作区） |
 | 报错：存图 | `src/tools/saved.rs` | `rendered/` 建不了、指到工作区外、写不进；`pictures` 建不了、是链接（`The pictures folder is a link.` 7） | 约 7 到 15（`The pictures folder is not a folder.` 8，兜底，正常走不到：是普通文件的建的时候就报错） | 同上 |
-| 报错：画 | `src/methods.rs` 交回的原因，首字母大写、加句号 | 太长、没有中文字体、画崩了、太久 | 约 5 到 25 | 和 `markdown` 方法同一句；没有中文字体的那句说清该装什么 |
+| 报错：画 | `src/methods.rs` 交回的原因，首字母大写、加句号 | 太长、没有中文字体、画崩了、太久、忙（`The renderer is busy.`，超时没人要了还在画的占满了，审计第四轮 R-2） | 约 5 到 25 | 和 `markdown` 方法同一句；没有中文字体的那句说清该装什么；忙的那句让她知道过一会儿再画 |
 | 报错：没有工作区、不认识的工具名 | `src/tools.rs`、`src/tools/render_image.rs` | 核心没给 `cwd`、工具名对不上 | 6、约 6 | 兜底，正常走不到 |

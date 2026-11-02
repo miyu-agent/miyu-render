@@ -3,9 +3,11 @@
 //! `markdown {markdown, theme?}`：画成图，每一页经 `blob.put` 交核心，回 `{pages: [{blob, width, height}]}`。字最多
 //! [`MAX_CHARS`] 个（同旧版）；`theme` 不写的照配置。字体第一次画的时候才挑，配置换了字体下一次重挑。
 
+mod pool;
+
 use std::panic::AssertUnwindSafe;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, mpsc};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
@@ -14,9 +16,12 @@ use serde_json::{Value, json};
 
 use crate::fonts::Generic;
 use crate::render::{Engine, Page, Style};
+
 use crate::settings::Settings;
 use crate::theme::Theme;
 use crate::wire::{Answer, Wire};
+pub use pool::Pool;
+use pool::Refused;
 
 /// 一次最多画多少个字（同旧版）。
 pub const MAX_CHARS: usize = 20_000;
@@ -44,8 +49,8 @@ pub const TIME_LIMIT: Duration = Duration::from_secs(30);
 /// 几样共用的：配置、画的那一套、核心、字体库从哪来、限时。
 pub struct State {
     pub settings: Mutex<Settings>,
-    /// 画的那一套：第一次画才开，字体换了、画崩了扔掉重开。一次只画一张。
-    pub engine: Arc<Mutex<Option<Engine>>>,
+    /// 画的那一套：第一次画才开，字体换了、画崩了扔掉重开。一次只替一个在等的请求画（[`Pool`]）。
+    pub engine: Arc<Pool>,
     pub core: Arc<dyn Core>,
     pub fonts: Fonts,
     /// 一次最多画多久：正式跑是 [`TIME_LIMIT`]。
@@ -138,44 +143,61 @@ fn markdown(state: &State, params: &Value) -> Answer {
     Ok(json!({ "pages": answered }))
 }
 
-/// 在另一个线程里画，等至多 `state.limit`：画崩了（panic）接住、扔掉画的那一套（下一次重开）；超时的不等了，那一张画完自己扔掉。
+/// 在另一个线程里画，连排队一起等至多 `state.limit`：画崩了（panic）接住、扔掉画的那一套（下一次重开）；超时的不等了，那一张
+/// 画完自己扔掉，不挡后来的（[`Pool`]）。
 fn draw(
     state: &State,
     text: String,
     (body, code): (Option<String>, Option<String>),
     style: Style,
 ) -> Result<Vec<Page>, String> {
-    let (engine, fonts) = (Arc::clone(&state.engine), Arc::clone(&state.fonts));
+    let deadline = Instant::now() + state.limit;
+    let mut loan = state
+        .engine
+        .borrow(deadline)
+        .map_err(|refused| match refused {
+            Refused::Late => TOO_LATE.to_string(),
+            Refused::Busy => "the renderer is busy".to_string(),
+        })?;
+    let id = loan.id;
+    let (pool, fonts) = (Arc::clone(&state.engine), Arc::clone(&state.fonts));
     let (tell, answer) = mpsc::channel();
     std::thread::spawn(move || {
-        let mut held = locked(&engine);
+        let mut engine = loan.engine.take();
         let done = std::panic::catch_unwind(AssertUnwindSafe(|| {
-            if held.is_none() {
+            if engine.is_none() {
                 let (database, generic) = fonts();
                 let opened = Engine::new(database, (body.as_deref(), code.as_deref()), &generic)?;
                 if let Some(note) = &opened.families().note {
                     eprintln!("{note}");
                 }
-                *held = Some(opened);
+                engine = Some(opened);
             }
             Ok::<_, crate::fonts::FontError>(
-                held.as_mut().map(|engine| engine.render(&text, &style)),
+                engine.as_mut().map(|engine| engine.render(&text, &style)),
             )
         }));
-        if done.is_err() {
-            *held = None;
+        if done.is_ok() {
+            loan.engine = engine;
         }
+        pool.give_back(loan);
         drop(tell.send(done));
     });
-    match answer.recv_timeout(state.limit) {
+    match answer.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
         Ok(Ok(Ok(Some(Ok(pages))))) => Ok(pages),
         Ok(Ok(Ok(Some(Err(too_long))))) => Err(too_long.to_string()),
         Ok(Ok(Err(error))) => Err(error.to_string()),
         Ok(Ok(Ok(None))) => Err("renderer not ready".into()),
         Ok(Err(_)) => Err("the renderer crashed".into()),
-        Err(_) => Err("took too long to draw".into()),
+        Err(_) => {
+            state.engine.abandon(id);
+            Err(TOO_LATE.into())
+        }
     }
 }
+
+/// 超时交回的那一句。
+const TOO_LATE: &str = "took too long to draw";
 
 #[cfg(test)]
 mod tests;
