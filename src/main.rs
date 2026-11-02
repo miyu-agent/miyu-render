@@ -90,9 +90,10 @@ fn configure(state: &State, keys: &serde_json::Map<String, Value>) {
 /// 读核心发来的：回应交给等它的，请求各开一个线程办，通知当场办。`tool.cancel` 不理：一个请求连排队至多等 30 秒，画的那一套
 /// 没人要了还在画的有上限（`methods::Pool`），等的线程不会越攒越多。
 fn read(wire: &Arc<Wire>, state: &Arc<State>) {
-    for line in io::stdin().lock().lines() {
+    // 按字节读一行：不是 UTF-8 的和读不懂的 JSON 一样跳过（审计第四轮 R-5：原来 `lines()` 碰到就 `break`，整个包退出）。
+    for line in io::stdin().lock().split(b'\n') {
         let Ok(line) = line else { break };
-        let Ok(message) = serde_json::from_str::<Value>(&line) else {
+        let Ok(message) = serde_json::from_slice::<Value>(&line) else {
             continue;
         };
         match (
