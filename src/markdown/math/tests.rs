@@ -38,3 +38,13 @@ fn unknown_commands_and_deep_nesting_stay() {
     );
     assert_eq!(unicode(&deep), deep);
 }
+
+/// 审计第四轮（2026-11-02）：模块说明「嵌套深过 [`MAX_NESTING`] 的照原文（递归没有上限就是一个爆栈的口子）」，可 `depth` 只数
+/// 裸 `{`：不带括号的 `\sqrt\sqrt…x`、`\hat\hat…x` 每一个也递归一层（`command` → `group` → `command`），守卫数不到。调试版
+/// 2 MiB 栈的线程上两千层（八千个字）就爆栈、整个进程 abort（`catch_unwind` 接不住）；发行版实测一万层还撑得住，两万字以内
+/// 到不了，余量只有两三倍。
+#[test]
+fn commands_without_braces_count_as_nesting_too() {
+    let deep = format!("{}x", "\\sqrt".repeat(MAX_NESTING + 1));
+    assert_eq!(unicode(&deep), deep, "嵌套深过上限的照原文");
+}

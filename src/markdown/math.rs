@@ -8,129 +8,162 @@ mod symbols;
 
 use symbols::{SUBSCRIPTS, SUPERSCRIPTS, symbol};
 
-/// 括号嵌套最多几层。
+/// 嵌套最多几层：括号和命令取参数都算一层（`\sqrt\sqrt x` 两层，审计第四轮 R-4：原来只数 `{`）。
 pub const MAX_NESTING: usize = 64;
 
 /// 换成 Unicode 写法；嵌套太深的照原文。多的空白并成一个。
 pub fn unicode(tex: &str) -> String {
     let chars: Vec<char> = tex.chars().collect();
-    if depth(&chars) > MAX_NESTING {
+    let mut reader = Reader {
+        chars: &chars,
+        cursor: 0,
+        level: 0,
+        too_deep: false,
+    };
+    let out = reader.sequence(None);
+    if reader.too_deep {
         return tex.to_string();
     }
-    let mut cursor = 0;
-    sequence(&chars, &mut cursor, None)
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// 裸 `{` 最深几层（`\{` 不算）。
-fn depth(chars: &[char]) -> usize {
-    let (mut now, mut most, mut escaped) = (0usize, 0usize, false);
-    for ch in chars {
-        if escaped {
-            escaped = false;
-            continue;
-        }
-        match ch {
-            '\\' => escaped = true,
-            '{' => {
-                now += 1;
-                most = most.max(now);
-            }
-            '}' => now = now.saturating_sub(1),
-            _ => {}
-        }
+/// 读到哪了、递归到第几层；深过 [`MAX_NESTING`] 的记下、不再往下读。
+struct Reader<'a> {
+    chars: &'a [char],
+    cursor: usize,
+    level: usize,
+    too_deep: bool,
+}
+
+impl Reader<'_> {
+    fn peek(&self) -> Option<char> {
+        self.chars.get(self.cursor).copied()
     }
-    most
-}
 
-/// 一串，读到 `stop`（组的 `}`）为止。
-fn sequence(chars: &[char], cursor: &mut usize, stop: Option<char>) -> String {
-    let mut out = String::new();
-    while let Some(&ch) = chars.get(*cursor) {
-        *cursor += 1;
-        if Some(ch) == stop {
-            return out;
+    /// 往下一层：深过上限的交回 `false`，整个公式照原文。
+    fn enter(&mut self) -> bool {
+        self.level += 1;
+        if self.level > MAX_NESTING {
+            self.too_deep = true;
         }
-        match ch {
-            '\\' => out.push_str(&command(chars, cursor)),
-            '^' => out.push_str(&script(&group(chars, cursor), SUPERSCRIPTS, '^')),
-            '_' => out.push_str(&script(&group(chars, cursor), SUBSCRIPTS, '_')),
-            '{' => out.push_str(&sequence(chars, cursor, Some('}'))),
-            '\'' => out.push('′'),
-            '~' => out.push(' '),
-            _ => out.push(ch),
-        }
+        !self.too_deep
     }
-    out
-}
 
-/// 一个参数：`{…}`、一个命令或者一个字。
-fn group(chars: &[char], cursor: &mut usize) -> String {
-    let Some(&ch) = chars.get(*cursor) else {
-        return String::new();
-    };
-    *cursor += 1;
-    match ch {
-        '{' => sequence(chars, cursor, Some('}')),
-        '\\' => command(chars, cursor),
-        _ => ch.to_string(),
+    fn leave(&mut self) {
+        self.level -= 1;
     }
-}
 
-/// 反斜杠后面的一个命令。
-fn command(chars: &[char], cursor: &mut usize) -> String {
-    if let Some(&ch) = chars.get(*cursor)
-        && !ch.is_ascii_alphabetic()
-    {
-        *cursor += 1;
-        return if matches!(ch, ',' | ';' | ':' | ' ' | '!') {
-            " ".to_string()
+    /// 一个组 `{…}` 的里面：`{` 已经读过了。
+    fn braced(&mut self) -> String {
+        let out = if self.enter() {
+            self.sequence(Some('}'))
         } else {
-            ch.to_string()
+            String::new()
         };
+        self.leave();
+        out
     }
-    let start = *cursor;
-    while chars.get(*cursor).is_some_and(char::is_ascii_alphabetic) {
-        *cursor += 1;
-    }
-    let name: String = chars[start..*cursor].iter().collect();
-    // 命令后面的一个空格是 TeX 的分隔，吃掉。
-    if chars.get(*cursor) == Some(&' ') {
-        *cursor += 1;
-    }
-    match name.as_str() {
-        "frac" | "dfrac" | "tfrac" => {
-            let top = group(chars, cursor);
-            let bottom = group(chars, cursor);
-            format!("{}/{}", wrap(&top), wrap(&bottom))
+
+    /// 一串，读到 `stop`（组的 `}`）为止。
+    fn sequence(&mut self, stop: Option<char>) -> String {
+        let mut out = String::new();
+        while let Some(ch) = self.peek() {
+            if self.too_deep {
+                break;
+            }
+            self.cursor += 1;
+            if Some(ch) == stop {
+                return out;
+            }
+            match ch {
+                '\\' => out.push_str(&self.command()),
+                '^' => out.push_str(&script(&self.group(), SUPERSCRIPTS, '^')),
+                '_' => out.push_str(&script(&self.group(), SUBSCRIPTS, '_')),
+                '{' => out.push_str(&self.braced()),
+                '\'' => out.push('′'),
+                '~' => out.push(' '),
+                _ => out.push(ch),
+            }
         }
-        "sqrt" => format!("√{}", wrap(&group(chars, cursor))),
-        "operatorname" | "text" | "mathrm" | "mathbf" | "mathit" | "textbf" | "textit"
-        | "mathsf" | "mathcal" => group(chars, cursor),
-        "binom" | "dbinom" | "tbinom" => {
-            let upper = group(chars, cursor);
-            let lower = group(chars, cursor);
-            format!("C({},{})", upper.trim(), lower.trim())
+        out
+    }
+
+    /// 一个参数：`{…}`、一个命令或者一个字。
+    fn group(&mut self) -> String {
+        let Some(ch) = self.peek() else {
+            return String::new();
+        };
+        self.cursor += 1;
+        match ch {
+            '{' => self.braced(),
+            '\\' => self.command(),
+            _ => ch.to_string(),
         }
-        "hat" | "bar" | "overline" | "vec" | "tilde" | "dot" | "ddot" | "check" | "breve" => {
-            let mark = match name.as_str() {
-                "hat" => '\u{0302}',
-                "bar" | "overline" => '\u{0304}',
-                "vec" => '\u{20d7}',
-                "tilde" => '\u{0303}',
-                "dot" => '\u{0307}',
-                "ddot" => '\u{0308}',
-                "check" => '\u{030c}',
-                _ => '\u{0306}',
+    }
+
+    /// 反斜杠后面的一个命令：取参数的往下一层。
+    fn command(&mut self) -> String {
+        let out = if self.enter() {
+            self.named()
+        } else {
+            String::new()
+        };
+        self.leave();
+        out
+    }
+
+    fn named(&mut self) -> String {
+        if let Some(ch) = self.peek()
+            && !ch.is_ascii_alphabetic()
+        {
+            self.cursor += 1;
+            return if matches!(ch, ',' | ';' | ':' | ' ' | '!') {
+                " ".to_string()
+            } else {
+                ch.to_string()
             };
-            format!("{}{mark}", group(chars, cursor))
         }
-        "left" | "right" | "big" | "Big" | "bigg" | "Bigg" | "displaystyle" | "textstyle"
-        | "limits" | "nolimits" => String::new(),
-        "quad" | "qquad" => " ".to_string(),
-        other => symbol(other).map_or_else(|| format!("\\{other}"), str::to_string),
+        let start = self.cursor;
+        while self.peek().is_some_and(|ch| ch.is_ascii_alphabetic()) {
+            self.cursor += 1;
+        }
+        let name: String = self.chars[start..self.cursor].iter().collect();
+        // 命令后面的一个空格是 TeX 的分隔，吃掉。
+        if self.peek() == Some(' ') {
+            self.cursor += 1;
+        }
+        match name.as_str() {
+            "frac" | "dfrac" | "tfrac" => {
+                let top = self.group();
+                let bottom = self.group();
+                format!("{}/{}", wrap(&top), wrap(&bottom))
+            }
+            "sqrt" => format!("√{}", wrap(&self.group())),
+            "operatorname" | "text" | "mathrm" | "mathbf" | "mathit" | "textbf" | "textit"
+            | "mathsf" | "mathcal" => self.group(),
+            "binom" | "dbinom" | "tbinom" => {
+                let upper = self.group();
+                let lower = self.group();
+                format!("C({},{})", upper.trim(), lower.trim())
+            }
+            "hat" | "bar" | "overline" | "vec" | "tilde" | "dot" | "ddot" | "check" | "breve" => {
+                let mark = match name.as_str() {
+                    "hat" => '\u{0302}',
+                    "bar" | "overline" => '\u{0304}',
+                    "vec" => '\u{20d7}',
+                    "tilde" => '\u{0303}',
+                    "dot" => '\u{0307}',
+                    "ddot" => '\u{0308}',
+                    "check" => '\u{030c}',
+                    _ => '\u{0306}',
+                };
+                format!("{}{mark}", self.group())
+            }
+            "left" | "right" | "big" | "Big" | "bigg" | "Bigg" | "displaystyle" | "textstyle"
+            | "limits" | "nolimits" => String::new(),
+            "quad" | "qquad" => " ".to_string(),
+            other => symbol(other).map_or_else(|| format!("\\{other}"), str::to_string),
+        }
     }
 }
 
