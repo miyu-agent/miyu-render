@@ -233,3 +233,53 @@ fn too_many_nodes_or_edges_are_not_drawn() {
     let parallel = format!("graph TD\n{}", "a-->b\n".repeat(MAX_EDGES + 1));
     assert!(!drawn(&parallel), "多一条边不画");
 }
+
+/// 审计第四轮：这里依赖的是 crates.io 上没补过的 mermaid-rs-renderer 0.3.1。它量字宽时另扫一遍系统字体，挑中的字体整份拷进一个
+/// 全局的表常驻，还整份写进 `$XDG_CACHE_HOME/mmdr/font-cache/<哈希>.font`（没设的是 `~/.cache/mmdr`）：包外面、几个用这个库的
+/// 程序共用、卸载不清；核心 V-35 为这个补过这个库（`third_party/mermaid-rs-renderer`），一律不碰那个目录。跑这里的测试也往开发者
+/// 的家目录里写。另起一个测试进程，`XDG_CACHE_HOME`、`HOME` 指到临时文件夹，画一张图，看那里有没有多出东西。
+#[test]
+fn drawing_a_diagram_writes_nothing_under_the_cache_home() {
+    if std::env::var_os("MIYU_RENDER_AUDIT_CHILD").is_some() {
+        draw(
+            "graph TD\n  A[开始] --> B[结束]\n",
+            &Theme::Paper.palette(),
+            "Miyu Test CJK",
+            &fonts(),
+            960,
+        )
+        .expect("画得出");
+        return;
+    }
+    let home = scratch("cache-home");
+    let status = std::process::Command::new(std::env::current_exe().expect("找得到自己"))
+        .args([
+            "render::diagram::tests::drawing_a_diagram_writes_nothing_under_the_cache_home",
+            "--exact",
+            "--test-threads=1",
+        ])
+        .env("MIYU_RENDER_AUDIT_CHILD", "1")
+        .env("XDG_CACHE_HOME", &home)
+        .env("HOME", &home)
+        .stdout(std::process::Stdio::null())
+        .status()
+        .expect("起得来");
+    let left: Vec<_> = walk(&home);
+    drop(std::fs::remove_dir_all(&home));
+    assert!(status.success(), "子进程画图失败：{status}");
+    assert!(left.is_empty(), "画一张图往缓存目录里写了：{left:?}");
+}
+
+/// `dir` 下所有的文件（递归）。
+fn walk(dir: &Path) -> Vec<std::path::PathBuf> {
+    let mut found = Vec::new();
+    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            found.extend(walk(&path));
+        } else {
+            found.push(path);
+        }
+    }
+    found
+}

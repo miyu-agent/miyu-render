@@ -9,8 +9,11 @@
 //! - 字体和正文一样：图里的字先用正文的字体族，字体库就是排字的那一份。
 //! - 规模（审计第四轮 R-2）：排版没有时限，也停不下来，稠密的图越大越慢（调试版 25 个节点两两连、600 条边 134 秒，发行版
 //!   1700 条边 333 秒）。先读一遍数节点和边，多过 [`MAX_NODES`]、[`MAX_EDGES`] 的不排，照代码块画；这么多也画不进一栏、看不清。
+//! - 渲染器量字宽时自己找系统字体，找到的记下在哪个文件（核心补过的那一份，审计第四轮 R-3）：记在包的状态目录里
+//!   （[`remember_fonts`]），不往几个程序共用的 `~/.cache/mmdr` 写。
 
-use std::sync::Arc;
+use std::path::PathBuf;
+use std::sync::{Arc, Once};
 
 use image::RgbaImage;
 use mermaid_rs_renderer::{LayoutConfig, Theme};
@@ -45,6 +48,7 @@ pub fn draw(
     if source.len() > MAX_SOURCE {
         return None;
     }
+    remember_fonts();
     let parsed = mermaid_rs_renderer::parse_mermaid_strict(source).ok()?;
     if parsed.graph.nodes.len() > MAX_NODES || parsed.graph.edges.len() > MAX_EDGES {
         return None;
@@ -55,6 +59,18 @@ pub fn draw(
     let svg = mermaid_rs_renderer::render_svg(&laid, &theme, &layout);
     let svg = transparent(&svg, &theme.background)?;
     raster(&svg, body, fonts, theme.font_size, max_width)
+}
+
+/// 渲染器记字体位置的目录，整个进程定一次：核心给了状态目录（`MIYU_PACKAGE_STATE`，作者说明：运行时的状态写那里）的记在
+/// 它下面的 `mermaid-fonts/`，没给的不记（每个进程照旧扫一次系统字体库）。不定的话渲染器照它原来的 `$XDG_CACHE_HOME/mmdr`。
+fn remember_fonts() {
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        let state = std::env::var_os("MIYU_PACKAGE_STATE").filter(|dir| !dir.is_empty());
+        mermaid_rs_renderer::set_font_cache_dir(
+            state.map(|dir| PathBuf::from(dir).join("mermaid-fonts")),
+        );
+    });
 }
 
 /// 照页面的六个颜色配的主题。

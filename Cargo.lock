@@ -479,12 +479,12 @@ dependencies = [
 [[package]]
 name = "mermaid-rs-renderer"
 version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6cb5b469222ce6b9896edf0a969cf68464f5a028ef394fd6643f00bd943df117"
+source = "git+https://github.com/miyu-agent/miyu?rev=64bc6ecd2fdc0d3165bcd8ff8627ef8a516ea8d1#64bc6ecd2fdc0d3165bcd8ff8627ef8a516ea8d1"
 dependencies = [
  "anyhow",
  "fontdb",
  "json5",
+ "memmap2",
  "once_cell",
  "regex",
  "serde",
