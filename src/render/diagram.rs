@@ -154,6 +154,8 @@ pub fn transparent(svg: &str, background: &str) -> Option<String> {
 }
 
 /// SVG 画成透明的图：字缩到 [`TEXT_PX`]，宽不超过 `max_width`、高不超过 [`MAX_HEIGHT`]。
+///
+/// `<image>` 一律不取（[`no_images`]）。
 fn raster(
     svg: &str,
     body: &str,
@@ -164,6 +166,7 @@ fn raster(
     let options = usvg::Options {
         font_family: body.to_string(),
         fontdb: Arc::clone(fonts),
+        image_href_resolver: no_images(),
         ..usvg::Options::default()
     };
     let tree = usvg::Tree::from_str(svg, &options).ok()?;
@@ -189,6 +192,16 @@ fn raster(
         pixel.0 = [colour.red(), colour.green(), colour.blue(), colour.alpha()];
     }
     Some(image)
+}
+
+/// 图里的 `<image>` 一张都不取（审计第四轮 R-1）。渲染器把 `style`、`classDef` 的值原样拼进 SVG，模型写的样式能在图里另写一个
+/// `<image href="/本机/的/文件">`；usvg 默认照路径读文件（这个进程不在沙盒里），读得到的 SVG 会被画进发出去的图，设备文件、管道
+/// 还会一直读、一直等。内嵌的 `data:` 也不收：渲染器自己只在 C4 的人像里用两张 PNG，PNG 本来就没开着画。
+fn no_images() -> usvg::ImageHrefResolver<'static> {
+    usvg::ImageHrefResolver {
+        resolve_data: Box::new(|_, _, _| None),
+        resolve_string: Box::new(|_, _| None),
+    }
 }
 
 /// `#rrggbb`。
