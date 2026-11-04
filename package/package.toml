@@ -2,6 +2,8 @@
 
 [package]
 version = "0.1.0"
+# 带本机程序：一种系统一个包文件（发版时照 .github/workflows/release.yml 打）。
+targets = ["linux-x86_64", "macos-aarch64", "windows-x86_64"]
 protocol = [1, 1]
 name = { en = "Render", zh = "渲染", ja = "レンダリング" }
 summary = { en = "Draws Markdown as images: long replies, diagrams, formulas", zh = "把 Markdown 画成图：长回复、流程图、公式", ja = "Markdown を画像にする：長い返信、図、数式" }
