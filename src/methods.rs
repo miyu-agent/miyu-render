@@ -1,16 +1,15 @@
 //! 给别的软件调的方法（设计 36 第六节）：清单 `[export] methods = ["markdown"]`，核心发 `method.call {method, params, from?}`。
 //!
-//! `markdown {markdown, theme?}`：画成图，每一页经 `blob.put` 交核心，回 `{pages: [{blob, width, height}]}`。字最多
+//! `markdown {markdown, theme?}`：画成图，每一页交核心存成 blob（大的分块，[`upload`]），回 `{pages: [{blob, width, height}]}`。字最多
 //! [`MAX_CHARS`] 个（同旧版）；`theme` 不写的照配置。字体第一次画的时候才挑，配置换了字体下一次重挑。
 
 mod pool;
+pub mod upload;
 
 use std::panic::AssertUnwindSafe;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, mpsc};
 use std::time::{Duration, Instant};
 
-use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD;
 use cosmic_text::fontdb::Database;
 use serde_json::{Value, json};
 
@@ -128,12 +127,7 @@ fn markdown(state: &State, params: &Value) -> Answer {
     let mut answered = Vec::with_capacity(pages.len());
     for (index, page) in pages.iter().enumerate() {
         let name = format!("render-{}.png", index + 1);
-        let put = state
-            .core
-            .call(
-                "blob.put",
-                &json!({"data": STANDARD.encode(&page.png), "name": name}),
-            )
+        let put = upload::put(state.core.as_ref(), &name, &page.png)
             .map_err(|error| failed(&format!("blob.put failed: {error}")))?;
         let blob = put["blob"]
             .as_str()
