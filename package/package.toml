@@ -20,9 +20,11 @@ start = "always"
 # tools：render_image 一件（设计 36 第五节）。
 capabilities = ["tools"]
 
-# 给别的软件调（核心施工 X-18）：接入QQ 的长文转图经它画。
+# 给别的软件调（核心施工 X-18）：接入通讯平台的长文转图经它画。在总线上提供名字 `render`（施工 R-11，核心设计 67）：别的包照
+# 名字调（`bus.call {"name": "render", "method": "markdown"}`），不写这个包的编号；方法照名字带前缀。
 [export]
-methods = ["markdown"]
+provides = ["render"]
+methods = ["render.markdown"]
 
 [settings.theme]
 type = "option"

@@ -1,4 +1,5 @@
-//! 给别的软件调的方法（设计 36 第六节）：清单 `[export] methods = ["markdown"]`，核心发 `method.call {method, params, from?}`。
+//! 给别的软件调的方法（设计 36 第六节）：清单 `[export]` 声明总线上的名字 `render`、方法 `render.markdown`（施工 R-11，核心设计 67），
+//! 别的包照名字调（`bus.call {"name": "render", "method": "markdown"}`），核心发 `method.call {method, params, from?}`。
 //!
 //! `markdown {markdown, theme?}`：画成图，每一页交核心存成 blob（大的分块，[`upload`]），回 `{pages: [{blob, width, height}]}`。字最多
 //! [`MAX_CHARS`] 个（同旧版）；`theme` 不写的照配置。字体第一次画的时候才挑，配置换了字体下一次重挑。
@@ -25,8 +26,9 @@ use pool::Refused;
 /// 一次最多画多少个字（同旧版）。
 pub const MAX_CHARS: usize = 20_000;
 
-/// 登记的方法。
-pub const NAMES: [&str; 1] = ["markdown"];
+/// 登记的方法。后一个是总线上名字 `render` 底下的（施工 R-11，核心设计 67：清单 `[export]` 里写的是它），和前一个是同一件事；
+/// 不带前缀的照旧登记着，还没换成照名字调的老版接入通讯平台不断。
+pub const NAMES: [&str; 2] = ["markdown", "render.markdown"];
 
 /// 核心那一头：测试里换成假的。
 pub trait Core: Send + Sync {
@@ -77,7 +79,7 @@ fn failed(why: &str) -> Value {
 /// 办一次 `method.call`。
 pub fn call(state: &State, request: &Value) -> Answer {
     match request["method"].as_str().unwrap_or_default() {
-        "markdown" => markdown(state, &request["params"]),
+        "markdown" | "render.markdown" => markdown(state, &request["params"]),
         _ => Err(crate::wire::unknown_method()),
     }
 }
