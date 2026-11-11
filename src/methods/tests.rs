@@ -110,7 +110,10 @@ fn no_chinese_font_or_a_refused_put_fails() {
 
 #[test]
 fn registered_names_and_unknown_methods() {
-    assert_eq!(register(), json!({"methods": [{"name": "markdown"}]}));
+    assert_eq!(
+        register(),
+        json!({"methods": [{"name": "markdown"}, {"name": "render.markdown"}]})
+    );
     let (state, _) = setup(false, &["cjk.otf"]);
     let error = call(&state, &json!({"method": "nope", "params": {}})).expect_err("不认识");
     assert_eq!(error["code"], -32601);
@@ -217,4 +220,31 @@ fn strays_fill_up_and_the_next_is_told_busy() {
         Some(answer)
     });
     assert!(answer.is_some_and(|answer| answer.is_ok()), "读完了照常画");
+}
+
+#[test]
+fn the_bus_name_render_reaches_the_same_method() {
+    // 施工 R-11（核心设计 67，BUS-4）：总线上提供名字 `render`，核心照 `render.markdown` 转来；不带前缀的照旧登记着。
+    let (state, _fake) = setup(false, &["cjk.otf"]);
+    let by_name = super::call(
+        &state,
+        &json!({"method": "render.markdown", "params": {"markdown": "你好"}, "from": "miyu-im"}),
+    )
+    .expect("画得出");
+    assert_eq!(by_name["pages"].as_array().map(Vec::len), Some(1));
+    let registered = super::register();
+    let names: Vec<&str> = registered["methods"]
+        .as_array()
+        .expect("是数组")
+        .iter()
+        .filter_map(|one| one["name"].as_str())
+        .collect();
+    assert_eq!(names, ["markdown", "render.markdown"]);
+    // 清单里声明了名字、导出的是带前缀的那一个（核心照它认 `bus.call` 调不调得到）。
+    let manifest = include_str!("../../package/package.toml");
+    assert!(manifest.contains("provides = [\"render\"]"), "{manifest}");
+    assert!(
+        manifest.contains("methods = [\"render.markdown\"]"),
+        "{manifest}"
+    );
 }
