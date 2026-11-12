@@ -1,6 +1,6 @@
 # 发版（照官方打包模板，同 miyu-embed、miyu-im）：推 `v*` 标签（v 加上 package/package.toml 里的版本）时一种系统打一个
 # `.miyu`（`miyu pkg pack` 打的，软件源只收这种），传进这个标签的 Release；软件源每天收一次，收进索引以后
-# `miyu pkg install miyu-render` 就装得上。render 包：本仓库编的 miyu-render 程序，加上 package/ 里的清单；本仓库的许可证随包发（AGPL，发布前审计 LIC-2）。
+# `miyu pkg install render` 就装得上（包编号 `render`，11-12 起不带 miyu-；程序照旧叫 miyu-render）。render 包：本仓库编的 miyu-render 程序，加上 package/ 里的清单；本仓库的许可证随包发（AGPL，发布前审计 LIC-2）。
 # Linux aarch64 等 CI 测上了再加（同 im）。
 name: release
 
@@ -24,7 +24,7 @@ jobs:
     permissions:
       contents: write
     with:
-      package: miyu-render
+      package: render
       folder: package
       target: ${{ matrix.target }}
       runs-on: ${{ matrix.os }}

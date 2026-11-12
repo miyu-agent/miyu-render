@@ -12,11 +12,11 @@ fn keys(value: &serde_json::Value) -> Map<String, Value> {
 fn known_keys_change_and_the_rest_are_ignored() {
     let mut settings = Settings::default();
     let moved = settings.apply(&keys(&json!({
-        "miyu-render.theme": "dark",
-        "miyu-render.font": " Noto Sans CJK SC ",
-        "miyu-render.font_size": 40,
-        "miyu-memes.font": "x",
-        "miyu-render.unknown": 1,
+        "render.theme": "dark",
+        "render.font": " Noto Sans CJK SC ",
+        "render.font_size": 40,
+        "memes.font": "x",
+        "render.unknown": 1,
     })));
     assert!(moved, "字体换了");
     assert_eq!(settings.theme, Theme::Dark);
@@ -24,7 +24,7 @@ fn known_keys_change_and_the_rest_are_ignored() {
     assert_eq!(settings.code_font, None);
     assert_eq!(settings.font_size, 40);
     assert!(
-        !settings.apply(&keys(&json!({"miyu-render.theme": "light"}))),
+        !settings.apply(&keys(&json!({"render.theme": "light"}))),
         "只换主题不算字体换了"
     );
 }
@@ -33,15 +33,17 @@ fn known_keys_change_and_the_rest_are_ignored() {
 fn null_and_wrong_values_fall_back() {
     let mut settings = Settings::default();
     settings.apply(&keys(
-        &json!({"miyu-render.theme": "dark", "miyu-render.font": "A", "miyu-render.font_size": 50}),
+        &json!({"render.theme": "dark", "render.font": "A", "render.font_size": 50}),
     ));
-    let moved = settings.apply(&keys(&json!({"miyu-render.theme": "sepia", "miyu-render.font": null, "miyu-render.font_size": "big"})));
+    let moved = settings.apply(&keys(
+        &json!({"render.theme": "sepia", "render.font": null, "render.font_size": "big"}),
+    ));
     assert!(moved);
     assert_eq!(settings, Settings::default());
-    settings.apply(&keys(&json!({"miyu-render.font_size": 5})));
+    settings.apply(&keys(&json!({"render.font_size": 5})));
     assert_eq!(settings.font_size, 14, "夹在范围里");
     settings.apply(&keys(
-        &json!({"miyu-render.font_size": 500, "miyu-render.code_font": "  "}),
+        &json!({"render.font_size": 500, "render.code_font": "  "}),
     ));
     assert_eq!((settings.font_size, settings.code_font), (56, None));
 }

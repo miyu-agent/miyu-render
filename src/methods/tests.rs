@@ -228,7 +228,7 @@ fn the_bus_name_render_reaches_the_same_method() {
     let (state, _fake) = setup(false, &["cjk.otf"]);
     let by_name = super::call(
         &state,
-        &json!({"method": "render.markdown", "params": {"markdown": "你好"}, "from": "miyu-im"}),
+        &json!({"method": "render.markdown", "params": {"markdown": "你好"}, "from": "im"}),
     )
     .expect("画得出");
     assert_eq!(by_name["pages"].as_array().map(Vec::len), Some(1));

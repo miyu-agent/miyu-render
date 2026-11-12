@@ -1,11 +1,11 @@
-//! 配置项（设计 36 第七节）：清单 `[settings]` 的四项，握手交来的、推来的照换。键是 `miyu-render.<名字>`。
+//! 配置项（设计 36 第七节）：清单 `[settings]` 的四项，握手交来的、推来的照换。键是 `render.<名字>`（包编号 `render`）。
 
 use serde_json::{Map, Value};
 
 use crate::theme::Theme;
 
 /// 包的编号：配置项的键以它开头。
-const PACKAGE: &str = "miyu-render";
+const PACKAGE: &str = "render";
 
 /// 字号的出厂值和范围（同旧版）。
 pub const FONT_SIZE: (u32, u32, u32) = (36, 14, 56);
