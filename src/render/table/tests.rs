@@ -111,3 +111,42 @@ fn a_long_number_stays_on_one_line() {
         got.widths
     );
 }
+
+/// 列多的表（审计 #137）：列不多的照旧留 `PAD`；每列分不够一个字加两边留空的，留空先收窄；连一个字都分不够的，字缩小。
+#[test]
+fn many_columns_narrow_the_padding_then_shrink_the_text() {
+    assert_eq!(fit(36.0, 5), (PAD, 36.0), "列不多的不变");
+    assert_eq!(fit(36.0, 15), (PAD, 36.0));
+    assert_eq!(fit(36.0, 16).0, 13, "960 / 16 = 60，留一个字 34，两边各 13");
+    let (pad, size) = fit(36.0, 40);
+    assert_eq!(pad, 0);
+    assert!(size < 36.0 && size * TABLE_SCALE <= 24.0, "{size}");
+}
+
+/// 120 列的中文表：每列只有 8 像素，字缩小了也照样落在自己的格子里。
+#[test]
+fn a_very_wide_chinese_table_keeps_each_character_in_its_cell() {
+    let count = 120;
+    let row = vec!["你"; count].join(" | ");
+    let rule = vec!["-"; count].join(" | ");
+    let got = grid(&format!("| {row} |\n| {rule} |\n| {row} |\n"));
+    assert_eq!(got.widths.len(), count);
+    assert_eq!(got.widths.iter().sum::<u32>(), COLUMN);
+    let mut seen = 0;
+    for row in &got.rows {
+        for (width, cell) in got.widths.iter().zip(&row.cells) {
+            let buffer = cell.as_ref().expect("有字");
+            let room = units::float(width - got.pad * 2);
+            for glyph in buffer.layout_runs().flat_map(|run| run.glyphs.iter()) {
+                seen += 1;
+                assert!(
+                    glyph.x >= 0.0 && glyph.x + glyph.w <= room,
+                    "列宽 {width}：{}+{}",
+                    glyph.x,
+                    glyph.w
+                );
+            }
+        }
+    }
+    assert_eq!(seen, count * 2, "每格一个字");
+}

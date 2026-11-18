@@ -291,10 +291,9 @@ fn audit_137_a_very_deep_list_item_still_has_its_text_inside_the_column() {
 }
 
 /// 审计 #137：表格列多到 34 列以上时每列分到的宽不够两边留空（14 × 2），给字的宽是 0，字挤出自己的格子、压到旁边。
-/// 画的时候字从格子左边 `PAD` 处开始（`draw.rs`），所以每格的字要落在 `PAD..宽-PAD` 里，整张表不超过一栏宽。
+/// 画的时候字从格子左边 `pad` 处开始（`draw.rs`，列多的表留空跟着收窄），所以每格的字要落在 `pad..宽-pad` 里，整张表不超过一栏宽。
 #[test]
 fn audit_137_a_table_with_many_columns_keeps_each_text_inside_its_cell() {
-    use super::super::table::PAD;
     let count = 40;
     let header = vec!["h"; count].join(" | ");
     let rule = vec!["-"; count].join(" | ");
@@ -311,7 +310,7 @@ fn audit_137_a_table_with_many_columns_keeps_each_text_inside_its_cell() {
         for (width, cell) in grid.widths.iter().zip(&row.cells) {
             let Some(buffer) = cell else { continue };
             #[expect(clippy::cast_precision_loss, reason = "几千像素以内")]
-            let room = width.saturating_sub(PAD * 2) as f32;
+            let room = width.saturating_sub(grid.pad * 2) as f32;
             for run in buffer.layout_runs() {
                 for glyph in run.glyphs {
                     seen += 1;
@@ -326,4 +325,18 @@ fn audit_137_a_table_with_many_columns_keeps_each_text_inside_its_cell() {
         }
     }
     assert!(seen >= count * 2, "每格的字都要排出来：{seen}");
+}
+
+/// 列表缩进封顶（审计 #137）：头 14 层照旧每层缩 36，再深的不再往右缩，给字的宽总有半栏多。
+#[test]
+fn list_indent_stops_growing_past_the_cap() {
+    let mut markdown = String::new();
+    for level in 0..20 {
+        markdown.push_str(&"  ".repeat(level));
+        markdown.push_str("- 字\n");
+    }
+    let insets: Vec<u32> = laid(&markdown).iter().map(|laid| laid.inset.0).collect();
+    let expected: Vec<u32> = (0..20u32).map(|level| level.min(13) * 36).collect();
+    assert_eq!(insets, expected);
+    assert!(COLUMN - insets[19] >= COLUMN / 2, "给字的宽至少半栏");
 }

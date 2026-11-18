@@ -32,7 +32,7 @@ const LINE_HEIGHT: f32 = 1.42;
 const CODE_SCALE: f32 = 30.0 / 36.0;
 
 /// 表格的字号是正文的几倍（旧版 0.92）。
-const TABLE_SCALE: f32 = 0.92;
+pub const TABLE_SCALE: f32 = 0.92;
 
 /// 代码块左右、上下留的空。
 pub const CODE_PAD: (u32, u32) = (32, 24);
@@ -42,6 +42,9 @@ pub const QUOTE: (u32, u32, u32) = (6, 32, 14);
 
 /// 列表每深一层往里缩多少。
 const LIST_INDENT: u32 = 36;
+
+/// 列表最多缩几层（审计 #137）：缩进封在半栏以内，再深的不再往右缩，给字的宽总有半栏多；不封的第 28 层缩出栏外、字宽归零。
+const MAX_LIST_LEVELS: u32 = COLUMN / 2 / LIST_INDENT;
 
 /// 怎么排：配色、正文字号、两个字体族。
 #[derive(Debug, Clone, Copy)]
@@ -103,7 +106,10 @@ pub fn lay(system: &mut FontSystem, block: &Block, look: &Look) -> Laid {
         Kind::Quote => ((small, small), (QUOTE.1, QUOTE.2), QUOTE.2, QUOTE.1 / 2),
         Kind::Item { depth } => (
             (small / 2, small / 2),
-            (u32::from(depth.saturating_sub(1)) * LIST_INDENT, 0),
+            (
+                u32::from(depth.saturating_sub(1)).min(MAX_LIST_LEVELS) * LIST_INDENT,
+                0,
+            ),
             0,
             0,
         ),

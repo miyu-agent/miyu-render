@@ -7,7 +7,7 @@ use cosmic_text::{Buffer, FontSystem, LayoutRun, SwashCache};
 use image::RgbaImage;
 
 use super::layout::{INLINE_CODE, Laid, QUOTE};
-use super::table::{Grid, PAD as TABLE_PAD, PAD_Y as TABLE_PAD_Y};
+use super::table::{Grid, PAD_Y as TABLE_PAD_Y};
 use super::{COLUMN, paint, units};
 use crate::markdown::Kind;
 use crate::theme::{Palette, Rgba};
@@ -101,7 +101,7 @@ fn table(
         let mut x = left;
         for (width, cell) in grid.widths.iter().zip(&row.cells) {
             if let Some(buffer) = cell {
-                let origin = (x + TABLE_PAD, top + row.top + TABLE_PAD_Y);
+                let origin = (x + grid.pad, top + row.top + TABLE_PAD_Y);
                 for run in buffer.layout_runs() {
                     chips(image, &run, origin, palette.code);
                 }

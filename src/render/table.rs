@@ -4,18 +4,20 @@
 //!   线以下的不动），窄的序号列、数字列不受牵连；加起来恰好一栏宽。等分会让九位的 QQ 号被逐字劈成两行（旧版实测）。
 //! - 一行多高照这一行最高的格子；表头的底比页面深两档，正文隔一行深一档；格子之间一像素的线。
 //! - 每一列照表头那一行的对齐（左、中、右）；格子里的 `<br>` 换行照换。
+//! - 列多到每列给字的宽不够一个字时（审计 #137，原来给的是 0、字挤出格子），格子左右留的空先跟着收窄；连不留空都不够一个字
+//!   的，整张表的字跟着缩小到一个字放得下。总宽照旧一栏宽。
 
 mod widths;
 
 use cosmic_text::{Align as TextAlign, Buffer, FontSystem};
 
-use super::layout::{Look, rich};
+use super::layout::{Look, TABLE_SCALE, rich};
 use super::{COLUMN, units};
 use crate::markdown::{Align, Kind, Span, Table};
 
 pub use widths::widths;
 
-/// 格子左右留的空。
+/// 格子左右留的空（列不多的时候；列多的收窄，见 [`Grid::pad`]）。
 pub const PAD: u32 = 14;
 
 /// 格子上下留的空。
@@ -39,6 +41,8 @@ pub struct Row {
 pub struct Grid {
     /// 每一列多宽，加起来是一栏宽。
     pub widths: Vec<u32>,
+    /// 格子左右留的空：列不多的是 [`PAD`]，列多的收窄。
+    pub pad: u32,
     /// 每一行，照先后：有表头的第一行是表头。
     pub rows: Vec<Row>,
     /// 整张表多高（连最下面一条线）。
@@ -55,6 +59,8 @@ pub fn lay(system: &mut FontSystem, table: &Table, look: &Look) -> Option<Grid> 
     if count == 0 {
         return None;
     }
+    let (pad, size) = fit(look.size, u32::try_from(count).unwrap_or(u32::MAX));
+    let look = &Look { size, ..*look };
     let mut natural = vec![0; count];
     for row in std::iter::once(&table.header).chain(table.rows.iter()) {
         for (slot, cell) in natural.iter_mut().zip(row) {
@@ -62,7 +68,7 @@ pub fn lay(system: &mut FontSystem, table: &Table, look: &Look) -> Option<Grid> 
         }
     }
     let min_content = units::ceil(look.size * 2.0);
-    let widths = widths(&natural, COLUMN, PAD, min_content);
+    let widths = widths(&natural, COLUMN, pad, min_content);
     let aligns: Vec<Option<TextAlign>> = (0..count)
         .map(|column| align(table.aligns.get(column).copied().unwrap_or_default()))
         .collect();
@@ -92,7 +98,7 @@ pub fn lay(system: &mut FontSystem, table: &Table, look: &Look) -> Option<Grid> 
                         cell,
                         Kind::Table,
                         look,
-                        Some(width.saturating_sub(PAD * 2)),
+                        Some(width.saturating_sub(pad * 2)),
                         aligns[column],
                     )
                 });
@@ -100,7 +106,7 @@ pub fn lay(system: &mut FontSystem, table: &Table, look: &Look) -> Option<Grid> 
             height = height.max(text);
             laid.push(buffer);
         }
-        let line = units::ceil(look.size * 0.92 * 1.42);
+        let line = units::ceil(look.size * TABLE_SCALE * 1.42);
         let height = height.max(line) + PAD_Y * 2;
         rows.push(Row {
             top,
@@ -113,9 +119,22 @@ pub fn lay(system: &mut FontSystem, table: &Table, look: &Look) -> Option<Grid> 
     }
     Some(Grid {
         widths,
+        pad,
         rows,
         height: top + 1,
     })
+}
+
+/// 列数是 `count` 时格子左右留多少空、表格照多大的正文字号排：每列至少分到一栏宽的 `1 / count`（[`widths()`]），从里面
+/// 先给字留一个字宽（表格字号的一个字），剩下的才是两边的空，最多 [`PAD`]；连一个字宽都分不到的不留空，字缩小到一个字正好放得下。
+fn fit(size: f32, count: u32) -> (u32, f32) {
+    let share = COLUMN / count.max(1);
+    let em = units::ceil(size * TABLE_SCALE);
+    if share >= em {
+        (PAD.min((share - em) / 2), size)
+    } else {
+        (0, (size * units::float(share) / units::float(em)).max(1.0))
+    }
 }
 
 /// 一格不折行要多宽。
