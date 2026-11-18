@@ -1,6 +1,6 @@
 //! 行内公式 `$…$` 换成 Unicode 写法（设计 36 第四节第 4 条，照旧版终端的退路 `render/math/unicode.rs`）：排字库没法在一行字中间
 //! 插一张图，`\alpha` 换成 `α`，上下标换成上下标的字（没有对应的写成 `^(…)`），`\frac{a}{b}` 换成 `a/b`（不是一个字的加括号），
-//! `\sqrt{x}` 换成 `√x`。独占一行的 `$$…$$` 画成图（`render::formula`）。
+//! `\sqrt{x}` 换成 `√x`、`\sqrt[3]{x}` 换成 `³√x`。独占一行的 `$$…$$` 画成图（`render::formula`）。
 //!
 //! 公式是模型写的：嵌套深过 [`MAX_NESTING`] 的照原文（递归没有上限就是一个爆栈的口子）。
 
@@ -88,8 +88,9 @@ impl Reader<'_> {
         out
     }
 
-    /// 一个参数：`{…}`、一个命令或者一个字。
+    /// 一个参数：`{…}`、一个命令或者一个字。前面的空白照 TeX 跳过（`\frac{1} {a+b}` 的分母是 `a+b`，审计 #136）。
     fn group(&mut self) -> String {
+        self.skip_space();
         let Some(ch) = self.peek() else {
             return String::new();
         };
@@ -99,6 +100,28 @@ impl Reader<'_> {
             '\\' => self.command(),
             _ => ch.to_string(),
         }
+    }
+
+    fn skip_space(&mut self) {
+        while self.peek().is_some_and(char::is_whitespace) {
+            self.cursor += 1;
+        }
+    }
+
+    /// 可选参数 `[…]`（`\sqrt[3]{x}` 的次数）：没有的交回空的。
+    fn optional(&mut self) -> Option<String> {
+        self.skip_space();
+        if self.peek() != Some('[') {
+            return None;
+        }
+        self.cursor += 1;
+        let out = if self.enter() {
+            self.sequence(Some(']'))
+        } else {
+            String::new()
+        };
+        self.leave();
+        Some(out)
     }
 
     /// 反斜杠后面的一个命令：取参数的往下一层。
@@ -138,7 +161,10 @@ impl Reader<'_> {
                 let bottom = self.group();
                 format!("{}/{}", wrap(&top), wrap(&bottom))
             }
-            "sqrt" => format!("√{}", wrap(&self.group())),
+            "sqrt" => {
+                let index = self.optional().map(|index| root_index(&index));
+                format!("{}√{}", index.unwrap_or_default(), wrap(&self.group()))
+            }
             "operatorname" | "text" | "mathrm" | "mathbf" | "mathit" | "textbf" | "textit"
             | "mathsf" | "mathcal" => self.group(),
             "binom" | "dbinom" | "tbinom" => {
@@ -178,6 +204,21 @@ fn script(content: &str, table: &[(char, char)], marker: char) -> String {
         }
     }
     out
+}
+
+/// 根号的次数：每个字都有上标的写成上标（`³√x`），有一个没有的照原样括着（`[k+1]√x`），不丢。
+fn root_index(index: &str) -> String {
+    let trimmed = index.trim();
+    trimmed
+        .chars()
+        .map(|ch| {
+            SUPERSCRIPTS
+                .iter()
+                .find(|(from, _)| *from == ch)
+                .map(|(_, to)| *to)
+        })
+        .collect::<Option<String>>()
+        .unwrap_or_else(|| format!("[{trimmed}]"))
 }
 
 /// 不是一个字、一串字母数字、本来就整个括着的，加括号（`\frac{a+1}{2}` 换成 `(a+1)/2`，优先级才对）。

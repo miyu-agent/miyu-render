@@ -51,3 +51,11 @@ fn audit_136_a_comment_only_hides_the_rest_of_its_own_line() {
         plain.width()
     );
 }
+
+/// 去注释只去 `%` 到行尾：`\%` 是字面的百分号留着，`\\` 后面的 `%` 照样是注释，没有换行的注释到末尾。
+#[test]
+fn only_real_comments_are_removed() {
+    assert_eq!(uncommented("50\\% % rate\n+ x"), "50\\% \n+ x");
+    assert_eq!(uncommented("a \\\\% b\nc"), "a \\\\\nc");
+    assert_eq!(uncommented("a % b"), "a ");
+}

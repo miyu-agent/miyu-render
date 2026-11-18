@@ -58,3 +58,11 @@ fn audit_136_a_space_before_a_group_and_a_root_index_are_understood() {
     let root = unicode(r"\sqrt[3]{x}");
     assert!(root == "³√x" || root == "∛x", "三次根号要认出 [3]：{root}");
 }
+
+/// 根号的次数没有上标字的照原样括着写在根号前面，不丢；空的次数照普通根号。
+#[test]
+fn a_root_index_without_superscripts_is_kept() {
+    assert_eq!(unicode(r"\sqrt[n]{x+1}"), "ⁿ√(x+1)");
+    assert_eq!(unicode(r"\sqrt[k+q]{x}"), "[k+q]√x");
+    assert_eq!(unicode(r"\sqrt[]{x}"), "√x");
+}
