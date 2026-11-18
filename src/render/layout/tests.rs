@@ -258,3 +258,72 @@ fn highlighted_code_takes_palette_colours_and_comments_slant() {
         "数"
     );
 }
+
+/// 审计 #137：列表每深一层缩 36 像素、不封顶，第 28 层起缩进超过一栏宽（960），字的宽归零、起点在画布外。
+#[test]
+fn audit_137_a_very_deep_list_item_still_has_its_text_inside_the_column() {
+    let mut markdown = String::new();
+    for level in 0..30 {
+        markdown.push_str(&"  ".repeat(level));
+        markdown.push_str("- 第");
+        markdown.push_str(&(level + 1).to_string());
+        markdown.push_str("层\n");
+    }
+    let got = laid(&markdown);
+    let deepest = got.last().expect("有块");
+    assert_eq!(
+        deepest.kind,
+        Kind::Item { depth: 30 },
+        "测试要真排到第 30 层"
+    );
+    let found = glyphs(deepest);
+    assert!(!found.is_empty(), "最深那项要有字");
+    #[expect(clippy::cast_precision_loss, reason = "几千像素以内")]
+    let (left, column) = (deepest.inset.0 as f32, COLUMN as f32);
+    for glyph in &found {
+        assert!(
+            left + glyph.x + glyph.w <= column,
+            "最深那项的字落在栏外：缩进 {left}，字在 {}..{}，栏宽 {column}",
+            glyph.x,
+            glyph.x + glyph.w
+        );
+    }
+}
+
+/// 审计 #137：表格列多到 34 列以上时每列分到的宽不够两边留空（14 × 2），给字的宽是 0，字挤出自己的格子、压到旁边。
+/// 画的时候字从格子左边 `PAD` 处开始（`draw.rs`），所以每格的字要落在 `PAD..宽-PAD` 里，整张表不超过一栏宽。
+#[test]
+fn audit_137_a_table_with_many_columns_keeps_each_text_inside_its_cell() {
+    use super::super::table::PAD;
+    let count = 40;
+    let header = vec!["h"; count].join(" | ");
+    let rule = vec!["-"; count].join(" | ");
+    let row = vec!["1"; count].join(" | ");
+    let got = laid(&format!("| {header} |\n| {rule} |\n| {row} |\n"));
+    let grid = got[0].grid.as_ref().expect("排成表格");
+    assert_eq!(grid.widths.len(), count, "测试要真排出 {count} 列");
+    assert!(
+        grid.widths.iter().sum::<u32>() <= COLUMN,
+        "整张表不超过一栏宽"
+    );
+    let mut seen = 0;
+    for row in &grid.rows {
+        for (width, cell) in grid.widths.iter().zip(&row.cells) {
+            let Some(buffer) = cell else { continue };
+            #[expect(clippy::cast_precision_loss, reason = "几千像素以内")]
+            let room = width.saturating_sub(PAD * 2) as f32;
+            for run in buffer.layout_runs() {
+                for glyph in run.glyphs {
+                    seen += 1;
+                    assert!(
+                        glyph.x >= 0.0 && glyph.x + glyph.w <= room,
+                        "列宽 {width}，给字的宽 {room}，字在 {}..{}，挤出了格子",
+                        glyph.x,
+                        glyph.x + glyph.w
+                    );
+                }
+            }
+        }
+    }
+    assert!(seen >= count * 2, "每格的字都要排出来：{seen}");
+}
