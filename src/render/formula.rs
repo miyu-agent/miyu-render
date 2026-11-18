@@ -8,6 +8,7 @@ use ratex_render::{RenderOptions, render_to_png};
 use ratex_types::color::Color;
 use ratex_types::math_style::MathStyle;
 
+use crate::markdown::math::uncommented;
 use crate::theme::Rgba;
 
 /// 公式的源码最长多少：模型写的，太长的多半是写坏了。
@@ -51,28 +52,6 @@ pub fn draw(tex: &str, colour: Rgba, size: f32, max_width: u32) -> Option<RgbaIm
         .ok()?
         .to_rgba8();
     (image.width() <= max_width && image.pixels().any(|pixel| pixel.0[3] > 0)).then_some(image)
-}
-
-/// 去掉 `%` 到行尾的注释（审计 #136）：先去再把换行压成空格，不然一个注释把后面所有行都吞了。`\%` 是字面的百分号，
-/// `\\%` 是换行后面跟注释：反斜杠和它后面的一个字成对跳过。
-fn uncommented(tex: &str) -> String {
-    let mut out = String::with_capacity(tex.len());
-    let mut chars = tex.chars();
-    while let Some(ch) = chars.next() {
-        match ch {
-            '\\' => {
-                out.push(ch);
-                out.extend(chars.next());
-            }
-            '%' => {
-                if chars.by_ref().any(|skipped| skipped == '\n') {
-                    out.push('\n');
-                }
-            }
-            _ => out.push(ch),
-        }
-    }
-    out
 }
 
 /// 0 到 255 换成 0 到 1。
