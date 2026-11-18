@@ -67,10 +67,18 @@ fn a_root_index_without_superscripts_is_kept() {
     assert_eq!(unicode(r"\sqrt[]{x}"), "√x");
 }
 
-/// `%` 到行尾是注释（审计 #136 收尾）：和画成图的公式一样去掉，`\%` 是字面的百分号。
+/// 去注释（审计 #136 收尾）：`%` 到行尾去掉、换行留着，`\%` 是字面的百分号，`\\%` 是换行后面跟注释。
 #[test]
 fn audit_136_comments_are_dropped_and_escaped_percent_stays() {
-    assert_eq!(unicode("a % note\n+ b"), "a + b");
-    assert_eq!(unicode("x^2 % note"), "x²");
-    assert_eq!(unicode(r"50\% + x"), "50% + x");
+    assert_eq!(unicode(&uncommented("a % note\n+ b")), "a + b");
+    assert_eq!(unicode(&uncommented("x^2 % note")), "x²");
+    assert_eq!(unicode(&uncommented(r"50\% + x")), "50% + x");
+    assert_eq!(uncommented("a \\\\% note\nb"), "a \\\\\nb");
+}
+
+/// 行内公式里的 `%` 照字面留着：模型常把「95%」写成 `$95%$`，当注释去掉就成了「95」。
+#[test]
+fn a_percent_sign_in_an_inline_formula_is_kept() {
+    assert_eq!(unicode("p = 95%"), "p = 95%");
+    assert_eq!(unicode(r"p = 95\%"), "p = 95%");
 }

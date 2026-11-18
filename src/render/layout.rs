@@ -197,7 +197,8 @@ fn fallback(block: &Block) -> Block {
     if block.kind == Kind::Formula {
         let tex: String = block.spans.iter().map(|span| span.text.as_str()).collect();
         let span = Span {
-            text: crate::markdown::math::unicode(&tex),
+            // 和画成图的那条一个口径：注释先去掉。
+            text: crate::markdown::math::unicode(&crate::markdown::math::uncommented(&tex)),
             style: Style::default(),
         };
         return Block {

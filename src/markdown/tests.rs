@@ -205,9 +205,9 @@ fn formulas_stand_alone_or_turn_into_unicode_inline() {
     );
 }
 
-/// 行内公式里的 `%` 注释不显示，注释后面那行的字还在（审计 #136 收尾）。
+/// 行内公式里的 `%` 照字面留着（审计 #136 收尾时定）：`$20%$` 排成「20%」，不当注释去掉。
 #[test]
-fn audit_136_an_inline_formula_drops_its_comment() {
-    let got = shape("设 $a % note\n= b$ 成立");
-    assert_eq!(got, [(Kind::Paragraph, "设 a = b 成立".into())]);
+fn a_percent_sign_in_an_inline_formula_is_kept() {
+    let got = shape("增长了 $20%$ 左右");
+    assert_eq!(got, [(Kind::Paragraph, "增长了 20% 左右".into())]);
 }

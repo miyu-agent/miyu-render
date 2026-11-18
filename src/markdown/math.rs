@@ -1,6 +1,7 @@
 //! 行内公式 `$…$` 换成 Unicode 写法（设计 36 第四节第 4 条，照旧版终端的退路 `render/math/unicode.rs`）：排字库没法在一行字中间
 //! 插一张图，`\alpha` 换成 `α`，上下标换成上下标的字（没有对应的写成 `^(…)`），`\frac{a}{b}` 换成 `a/b`（不是一个字的加括号），
-//! `\sqrt{x}` 换成 `√x`、`\sqrt[3]{x}` 换成 `³√x`，`%` 到行尾的注释去掉。独占一行的 `$$…$$` 画成图（`render::formula`）。
+//! `\sqrt{x}` 换成 `√x`、`\sqrt[3]{x}` 换成 `³√x`。独占一行的 `$$…$$` 画成图（`render::formula`）。
+//! 行内的 `%` 照字面留着：模型常把「20%」写成 `$20%$`，照 TeX 当注释去掉就成了「20」。
 //!
 //! 公式是模型写的：嵌套深过 [`MAX_NESTING`] 的照原文（递归没有上限就是一个爆栈的口子）。
 
@@ -11,9 +12,8 @@ use symbols::{SUBSCRIPTS, SUPERSCRIPTS, symbol};
 /// 嵌套最多几层：括号和命令取参数都算一层（`\sqrt\sqrt x` 两层，审计第四轮 R-4：原来只数 `{`）。
 pub const MAX_NESTING: usize = 64;
 
-/// 换成 Unicode 写法；`%` 注释先去掉（[`uncommented`]），嵌套太深的照（去了注释的）原文。多的空白并成一个。
+/// 换成 Unicode 写法；嵌套太深的照原文。多的空白并成一个。`%` 照字面留着，要去注释的先过 [`uncommented`]。
 pub fn unicode(tex: &str) -> String {
-    let tex = uncommented(tex);
     let chars: Vec<char> = tex.chars().collect();
     let mut reader = Reader {
         chars: &chars,
@@ -23,13 +23,13 @@ pub fn unicode(tex: &str) -> String {
     };
     let out = reader.sequence(None);
     if reader.too_deep {
-        return tex;
+        return tex.to_string();
     }
     out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// 去掉 `%` 到行尾的注释（审计 #136）：TeX 里行内、独占一行的公式都是这个规矩，画成图（`render::formula`）和换成 Unicode
-/// 写法前都先去；先去再把换行压成空格，不然一个注释把后面所有行都吞了。`\%` 是字面的百分号，
+/// 去掉 `%` 到行尾的注释（审计 #136）：独占一行的公式画成图（`render::formula`）、画不出来退回 Unicode 写法前都先去；
+/// 先去再把换行压成空格，不然一个注释把后面所有行都吞了。`\%` 是字面的百分号，
 /// `\\%` 是换行后面跟注释：反斜杠和它后面的一个字成对跳过。
 pub fn uncommented(tex: &str) -> String {
     let mut out = String::with_capacity(tex.len());
