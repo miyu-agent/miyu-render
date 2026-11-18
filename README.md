@@ -18,7 +18,7 @@ miyu pkg install render
 - 总线方法 `render.markdown`：别的软件包交 Markdown，拿回一页页图。im 的长回复转图用的就是它。
 - 设置键 `render.theme`、`render.font`、`render.code_font`、`render.font_size`。
 
-能画什么、图存在哪、每项设置是什么、出了问题怎么办，见 [附加软件：渲染](https://github.com/miyu-agent/miyu/blob/main/docs/guide/addons.md#渲染-render)。
+能画什么、图存在哪、每项设置是什么、出了问题怎么办，见 [附加软件：渲染](https://github.com/miyu-agent/miyu/blob/main/docs/zh/guide/addons.md#渲染-render)。
 
 字体用系统里装着的，不下载。一个有中文的字体都没有的画不了：Linux 装 Noto Sans CJK（例如 `noto-fonts-cjk` 包）。
 
