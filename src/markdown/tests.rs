@@ -204,3 +204,10 @@ fn formulas_stand_alone_or_turn_into_unicode_inline() {
         ]
     );
 }
+
+/// 行内公式里的 `%` 注释不显示，注释后面那行的字还在（审计 #136 收尾）。
+#[test]
+fn audit_136_an_inline_formula_drops_its_comment() {
+    let got = shape("设 $a % note\n= b$ 成立");
+    assert_eq!(got, [(Kind::Paragraph, "设 a = b 成立".into())]);
+}

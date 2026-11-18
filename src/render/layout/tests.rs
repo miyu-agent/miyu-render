@@ -229,6 +229,23 @@ fn a_formula_that_cannot_be_drawn_falls_back_to_unicode_text() {
     assert!(text.starts_with("x²"), "{text}");
 }
 
+/// 画不出来的公式退回 Unicode 写法时也去掉 `%` 注释（审计 #136 收尾）：注释的字不显示，注释后面那几行照样在。
+#[test]
+fn audit_136_a_formula_falling_back_to_text_drops_its_comments() {
+    let got = laid("$$\nx % note\n= y + \\frac{a}\n$$");
+    assert_eq!(got[0].kind, Kind::Paragraph, "分式缺分母，画不出来");
+    let text: String = got[0]
+        .buffer
+        .as_ref()
+        .expect("有字")
+        .lines
+        .iter()
+        .map(|line| line.text().to_string())
+        .collect();
+    assert!(!text.contains("note") && !text.contains('%'), "{text}");
+    assert!(text.contains("= y"), "{text}");
+}
+
 #[test]
 fn highlighted_code_takes_palette_colours_and_comments_slant() {
     let got = laid("```rust\nlet n = 1; // hi\n```");

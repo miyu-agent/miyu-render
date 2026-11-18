@@ -66,3 +66,11 @@ fn a_root_index_without_superscripts_is_kept() {
     assert_eq!(unicode(r"\sqrt[k+q]{x}"), "[k+q]√x");
     assert_eq!(unicode(r"\sqrt[]{x}"), "√x");
 }
+
+/// `%` 到行尾是注释（审计 #136 收尾）：和画成图的公式一样去掉，`\%` 是字面的百分号。
+#[test]
+fn audit_136_comments_are_dropped_and_escaped_percent_stays() {
+    assert_eq!(unicode("a % note\n+ b"), "a + b");
+    assert_eq!(unicode("x^2 % note"), "x²");
+    assert_eq!(unicode(r"50\% + x"), "50% + x");
+}
