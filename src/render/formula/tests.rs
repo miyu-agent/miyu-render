@@ -35,3 +35,19 @@ fn broken_empty_or_too_wide_are_not_drawn() {
         "太宽"
     );
 }
+
+/// 审计 #136：`draw` 先把所有空白（连换行）压成一个空格，`%` 行尾注释就把后面所有行都吞了：只画出第一行，也不退回
+/// Unicode 写法，读者看不出丢了。注释只该到行尾。
+#[test]
+fn audit_136_a_comment_only_hides_the_rest_of_its_own_line() {
+    let ink = [0, 0, 0, 255];
+    let plain = draw("a + x^2 + y^2", ink, 36.0, 960).expect("画得出");
+    let commented = draw("a % note\n+ x^2 + y^2", ink, 36.0, 960).expect("画得出");
+    assert_eq!(
+        commented.width(),
+        plain.width(),
+        "注释后面的行被吞了：带注释的宽 {}，不带的宽 {}",
+        commented.width(),
+        plain.width()
+    );
+}

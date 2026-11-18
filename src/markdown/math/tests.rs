@@ -48,3 +48,13 @@ fn commands_without_braces_count_as_nesting_too() {
     let deep = format!("{}x", "\\sqrt".repeat(MAX_NESTING + 1));
     assert_eq!(unicode(&deep), deep, "嵌套深过上限的照原文");
 }
+
+/// 审计 #136：`group()` 不跳空白、不认 `\sqrt` 的可选参数 `[n]`：`\frac{1} {a+b}` 的分母只取到一个空格，排成「1/a+b」
+/// （优先级错了）；`\sqrt[3]{x}` 排成「√[3]x」。
+#[test]
+fn audit_136_a_space_before_a_group_and_a_root_index_are_understood() {
+    assert_eq!(unicode(r"\frac{1} {a+b}"), "1/(a+b)", "组前的空格要跳过");
+    assert_eq!(unicode(r"\frac {1}{a+b}"), "1/(a+b)");
+    let root = unicode(r"\sqrt[3]{x}");
+    assert!(root == "³√x" || root == "∛x", "三次根号要认出 [3]：{root}");
+}
