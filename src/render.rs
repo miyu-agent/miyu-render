@@ -26,8 +26,11 @@ use image::RgbaImage;
 use crate::fonts::{self, Catalog, Families, FontError, Generic};
 use crate::theme::Palette;
 
-/// 一栏多宽（同旧版）。
+/// 一栏多宽（同旧版）。有宽表的那张图放宽（[`column_for`]，施工 R-14）。
 pub const COLUMN: u32 = 960;
+
+/// 一栏最宽（施工 R-14，2026-11-26 项目主人定）：宽表把栏放宽到这里为止，再宽的表照旧在这个宽里折行。
+pub const MAX_COLUMN: u32 = 1600;
 
 /// 页边（同旧版的出厂值）。
 pub const PADDING: u32 = 64;
@@ -111,37 +114,41 @@ impl Engine {
             code_chinese: self.families.code_chinese,
             emoji: self.families.emoji.as_deref(),
             fonts: &self.fonts,
+            column: COLUMN,
         };
-        let laid: Vec<layout::Laid> = crate::markdown::blocks(markdown)
+        let blocks = crate::markdown::blocks(markdown);
+        let column = column_for(&mut self.system, &blocks, &look);
+        let look = layout::Look { column, ..look };
+        let laid: Vec<layout::Laid> = blocks
             .iter()
             .map(|block| layout::lay(&mut self.system, block, &look))
             .collect();
         let shapes: Vec<columns::Shape> = laid.iter().map(shape).collect();
-        let plan = pages::plan(&shapes).ok_or(TooLong)?;
+        let plan = pages::plan(&shapes, column).ok_or(TooLong)?;
         let background = image::Rgba(style.palette.background);
         // 一块先画成一条，再把分到的几行拷上去；同一块连着用（拆开的）不重画。
         let mut strip: Option<(usize, RgbaImage)> = None;
         let mut out = Vec::with_capacity(plan.len());
         for page in &plan {
             let used = page.iter().map(|column| column.used).max().unwrap_or(0);
-            let (width, height) = pages::size(page.len(), used);
+            let (width, height) = pages::size(page.len(), used, column);
             let mut image = RgbaImage::from_pixel(width, height, background);
-            for (index, column) in page.iter().enumerate() {
-                let left = PADDING + u32::try_from(index).unwrap_or(0) * (COLUMN + columns::GAP);
-                for piece in &column.pieces {
+            for (index, placed) in page.iter().enumerate() {
+                let left = PADDING + u32::try_from(index).unwrap_or(0) * (column + columns::GAP);
+                for piece in &placed.pieces {
                     if strip
                         .as_ref()
                         .is_none_or(|(block, _)| *block != piece.block)
                     {
                         let block = &laid[piece.block];
                         let mut drawn =
-                            RgbaImage::from_pixel(COLUMN, block.height.max(1), background);
+                            RgbaImage::from_pixel(column, block.height.max(1), background);
                         draw::block(
                             &mut drawn,
                             &mut self.system,
                             &mut self.cache,
                             block,
-                            (0, 0),
+                            (0, 0, column),
                             &style.palette,
                         );
                         strip = Some((piece.block, drawn));
@@ -174,6 +181,21 @@ impl std::fmt::Display for TooLong {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "too long to draw")
     }
+}
+
+/// 这张图一栏多宽（施工 R-14）：平常 [`COLUMN`]；有表格正文不折行就放不下的，放宽到最宽的那张表放得下，最多 [`MAX_COLUMN`]。
+fn column_for(
+    system: &mut FontSystem,
+    blocks: &[crate::markdown::Block],
+    look: &layout::Look,
+) -> u32 {
+    blocks
+        .iter()
+        .filter_map(|block| block.table.as_ref())
+        .map(|table| table::needed(system, table, look))
+        .max()
+        .unwrap_or(0)
+        .clamp(COLUMN, MAX_COLUMN)
 }
 
 /// 排好的一块的形状（分栏只看它）。

@@ -8,7 +8,7 @@ use image::RgbaImage;
 
 use super::layout::{INLINE_CODE, Laid, QUOTE};
 use super::table::{Grid, PAD_Y as TABLE_PAD_Y};
-use super::{COLUMN, paint, units};
+use super::{paint, units};
 use crate::markdown::Kind;
 use crate::theme::{Palette, Rgba};
 
@@ -21,41 +21,37 @@ const CHIP: (f32, f32) = (5.0, 0.1);
 /// 粗细到多少算粗（字形的字重）。
 const BOLD: u16 = 600;
 
-/// 把排好的 `laid` 画在 `image` 上，左上角在 `(left, top)`。
+/// 把排好的 `laid` 画在 `image` 上，左上角在 `(left, top)`，一栏宽 `width`（施工 R-14 起跟着这张图的栏宽走）。
 pub fn block(
     image: &mut RgbaImage,
     system: &mut FontSystem,
     cache: &mut SwashCache,
     laid: &Laid,
-    (left, top): (u32, u32),
+    (left, top, width): (u32, u32, u32),
     palette: &Palette,
 ) {
     match laid.kind {
         Kind::Code => rounded(
             image,
-            (left, top, COLUMN, laid.height),
+            (left, top, width, laid.height),
             CODE_RADIUS,
             palette.code,
         ),
         Kind::Quote => {
-            rect(image, (left, top, COLUMN, laid.height), palette.quote());
+            rect(image, (left, top, width, laid.height), palette.quote());
             rect(image, (left, top, QUOTE.0, laid.height), palette.muted);
         }
-        Kind::Rule => rect(
-            image,
-            (left, top + laid.height / 2, COLUMN, 2),
-            palette.line,
-        ),
+        Kind::Rule => rect(image, (left, top + laid.height / 2, width, 2), palette.line),
         Kind::Heading(1) => rect(
             image,
-            (left, top + laid.height.saturating_sub(2), COLUMN, 2),
+            (left, top + laid.height.saturating_sub(2), width, 2),
             palette.line,
         ),
         _ => {}
     }
     if let Some(image_of) = laid.image.as_ref() {
         // mermaid 图：居中，照透明度叠上去（图的底就是页面）。
-        let x = left + COLUMN.saturating_sub(image_of.width()) / 2;
+        let x = left + width.saturating_sub(image_of.width()) / 2;
         for (dx, dy, pixel) in image_of.enumerate_pixels() {
             if let Some(target) = image.get_pixel_mut_checked(x + dx, top + dy) {
                 paint::over(target, pixel.0);
@@ -87,6 +83,7 @@ fn table(
     (left, top): (u32, u32),
     palette: &Palette,
 ) {
+    let width: u32 = grid.widths.iter().sum();
     for row in &grid.rows {
         let colour = if row.header {
             Some(palette.header())
@@ -96,10 +93,10 @@ fn table(
             None
         };
         if let Some(colour) = colour {
-            rect(image, (left, top + row.top, COLUMN, row.height), colour);
+            rect(image, (left, top + row.top, width, row.height), colour);
         }
         let mut x = left;
-        for (width, cell) in grid.widths.iter().zip(&row.cells) {
+        for (column, cell) in grid.widths.iter().zip(&row.cells) {
             if let Some(buffer) = cell {
                 let origin = (x + grid.pad, top + row.top + TABLE_PAD_Y);
                 for run in buffer.layout_runs() {
@@ -107,20 +104,20 @@ fn table(
                 }
                 text(image, system, cache, buffer, origin);
             }
-            x += width;
+            x += column;
         }
     }
     let bottom = grid.rows.last().map_or(0, |row| row.top + row.height);
     for row in &grid.rows {
-        rect(image, (left, top + row.top, COLUMN, 1), palette.line);
+        rect(image, (left, top + row.top, width, 1), palette.line);
     }
-    rect(image, (left, top + bottom, COLUMN, 1), palette.line);
+    rect(image, (left, top + bottom, width, 1), palette.line);
     let mut x = left;
-    for width in &grid.widths {
+    for column in &grid.widths {
         rect(image, (x, top, 1, bottom + 1), palette.line);
-        x += width;
+        x += column;
     }
-    rect(image, (left + COLUMN - 1, top, 1, bottom + 1), palette.line);
+    rect(image, (left + width - 1, top, 1, bottom + 1), palette.line);
 }
 
 /// 行内代码的底：一行里挨着的代码字形连成一块。

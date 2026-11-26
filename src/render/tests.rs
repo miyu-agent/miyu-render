@@ -349,3 +349,33 @@ fn code_in_a_known_language_is_coloured_from_the_palette() {
     assert_eq!(near(&plain, palette.code_string()), 0, "认不出的照单色");
     assert!(near(&plain, palette.text) > 100);
 }
+
+/// 宽表（施工 R-14）：正文不折放不下 960 的表把这张图的栏放宽，最多 [`MAX_COLUMN`]；普通的回复照旧 960。
+#[test]
+fn a_wide_table_widens_the_page_up_to_the_cap() {
+    let mut engine = engine();
+    let row =
+        "| 1,186.6 ms | 465.4 MiB | 505.5 MiB | 6,473.1 ms | 7,025 ms | 1,295.4 ms | 551.3 MiB |";
+    let table =
+        format!("| a | b | c | d | e | f | g |\n|--:|--:|--:|--:|--:|--:|--:|\n{row}\n{row}\n");
+    let page = one(&mut engine, &table, &style(Theme::Paper));
+    assert!(
+        page.width > PADDING * 2 + COLUMN && page.width <= PADDING * 2 + MAX_COLUMN,
+        "{}",
+        page.width
+    );
+    let huge = format!(
+        "| {} |\n| {} |\n| {} |\n",
+        vec!["h"; 30].join(" | "),
+        vec!["--:"; 30].join(" | "),
+        vec!["1,186.6 ms"; 30].join(" | ")
+    );
+    let page = one(&mut engine, &huge, &style(Theme::Paper));
+    assert_eq!(page.width, PADDING * 2 + MAX_COLUMN, "再宽的照上限");
+    let page = one(
+        &mut engine,
+        "你好\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
+        &style(Theme::Paper),
+    );
+    assert_eq!(page.width, PADDING * 2 + COLUMN, "窄表不放宽");
+}

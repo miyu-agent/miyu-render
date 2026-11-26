@@ -12,6 +12,7 @@ use super::*;
 static FONTS: std::sync::LazyLock<std::sync::Arc<Database>> =
     std::sync::LazyLock::new(|| std::sync::Arc::new(Database::new()));
 use crate::markdown::blocks;
+use crate::render::COLUMN;
 use crate::theme::Theme;
 
 fn system() -> FontSystem {
@@ -32,6 +33,7 @@ fn look() -> Look<'static> {
         code_chinese: false,
         emoji: None,
         fonts: &FONTS,
+        column: COLUMN,
     }
 }
 
