@@ -59,6 +59,8 @@ pub struct Look<'a> {
     pub emoji: Option<&'a str>,
     /// 字体库（画 mermaid 图的字用，R-3）。
     pub fonts: &'a Arc<Database>,
+    /// 一栏多宽（施工 R-14）：平常是 [`COLUMN`]，有宽表的那张图放宽到表放得下（`crate::render::column_for`）。
+    pub column: u32,
 }
 
 /// 排好的一块。
@@ -147,7 +149,7 @@ pub fn lay(system: &mut FontSystem, block: &Block, look: &Look) -> Laid {
         }
         None => (None, inset),
     };
-    let width = COLUMN.saturating_sub(inset.0 + right);
+    let width = look.column.saturating_sub(inset.0 + right);
     let buffer = shape(system, block, look, width);
     let mut breaks: Vec<u32> = Vec::new();
     for run in buffer.layout_runs() {
@@ -217,9 +219,9 @@ fn fallback(block: &Block) -> Block {
 fn figure(block: &Block, look: &Look) -> Option<Laid> {
     let source: String = block.spans.iter().map(|span| span.text.as_str()).collect();
     let image = if block.kind == Kind::Formula {
-        formula::draw(&source, look.palette.text, look.size, COLUMN)?
+        formula::draw(&source, look.palette.text, look.size, look.column)?
     } else {
-        diagram::draw(&source, &look.palette, look.body, look.fonts, COLUMN)?
+        diagram::draw(&source, &look.palette, look.body, look.fonts, look.column)?
     };
     let (font, height) = (units::ceil(look.size), image.height());
     Some(Laid {
@@ -264,14 +266,46 @@ pub fn rich(
     width: Option<u32>,
     align: Option<Align>,
 ) -> Buffer {
-    let base = metrics(kind, Style::default(), look.size);
-    let mut buffer = Buffer::new(system, base);
-    buffer.set_size(width.map(units::float), None);
-    buffer.set_wrap(if width.is_some() {
+    let wrap = if width.is_some() {
         Wrap::WordOrGlyph
     } else {
         Wrap::None
-    });
+    };
+    wrapped(
+        system,
+        spans,
+        kind,
+        look,
+        (width.map(units::float), wrap),
+        align,
+    )
+}
+
+/// 一串字拆不开的最小宽（施工 R-14，表格分列宽用）：照能断的地方都断开排一遍（`Wrap::Word`，宽给 1），最长的那一行就是拆不开的那一段。
+pub fn narrowest(system: &mut FontSystem, spans: &[Span], kind: Kind, look: &Look) -> u32 {
+    if spans.is_empty() {
+        return 0;
+    }
+    wrapped(system, spans, kind, look, (Some(1.0), Wrap::Word), None)
+        .layout_runs()
+        .map(|run| units::ceil(run.line_w))
+        .max()
+        .unwrap_or(0)
+}
+
+/// 照给的宽、折行方式排一块。
+fn wrapped(
+    system: &mut FontSystem,
+    spans: &[Span],
+    kind: Kind,
+    look: &Look,
+    (width, wrap): (Option<f32>, Wrap),
+    align: Option<Align>,
+) -> Buffer {
+    let base = metrics(kind, Style::default(), look.size);
+    let mut buffer = Buffer::new(system, base);
+    buffer.set_size(width, None);
+    buffer.set_wrap(wrap);
     let pieces = script::split(spans, kind == Kind::Code);
     let spans: Vec<(&str, Attrs)> = pieces
         .iter()

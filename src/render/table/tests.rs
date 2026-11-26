@@ -1,3 +1,4 @@
+//! 宽表（施工 R-14）：正文不折要的宽超过一栏时照它放宽；放宽以后数连单位一行、表头只在空格处折、不劈开连着的中文。
 //! 排表格：列宽加起来一栏宽；表头在第一行、正文隔行标底色；一行多高照最高的格子（格子里的 `<br>` 换行）；少写的格子空着；
 //! 右对齐的字贴着右边；十一位的号一行装得下。
 
@@ -12,6 +13,7 @@ use super::*;
 static FONTS: std::sync::LazyLock<std::sync::Arc<Database>> =
     std::sync::LazyLock::new(|| std::sync::Arc::new(Database::new()));
 use crate::markdown::blocks;
+use crate::render::COLUMN;
 use crate::theme::Theme;
 
 fn system() -> FontSystem {
@@ -24,7 +26,18 @@ fn system() -> FontSystem {
 }
 
 fn grid(markdown: &str) -> Grid {
-    let look = Look {
+    grid_at(markdown, COLUMN)
+}
+
+/// 排一张表，一栏宽 `column`。
+fn grid_at(markdown: &str, column: u32) -> Grid {
+    let look = Look { column, ..look() };
+    let block = blocks(markdown).remove(0);
+    lay(&mut system(), block.table.as_ref().expect("是表格"), &look).expect("排得出")
+}
+
+fn look() -> Look<'static> {
+    Look {
         palette: Theme::Paper.palette(),
         size: 36.0,
         body: "Miyu Test CJK",
@@ -32,9 +45,8 @@ fn grid(markdown: &str) -> Grid {
         code_chinese: false,
         emoji: None,
         fonts: &FONTS,
-    };
-    let block = blocks(markdown).remove(0);
-    lay(&mut system(), block.table.as_ref().expect("是表格"), &look).expect("排得出")
+        column: COLUMN,
+    }
 }
 
 #[test]
@@ -115,10 +127,14 @@ fn a_long_number_stays_on_one_line() {
 /// 列多的表（审计 #137）：列不多的照旧留 `PAD`；每列分不够一个字加两边留空的，留空先收窄；连一个字都分不够的，字缩小。
 #[test]
 fn many_columns_narrow_the_padding_then_shrink_the_text() {
-    assert_eq!(fit(36.0, 5), (PAD, 36.0), "列不多的不变");
-    assert_eq!(fit(36.0, 15), (PAD, 36.0));
-    assert_eq!(fit(36.0, 16).0, 13, "960 / 16 = 60，留一个字 34，两边各 13");
-    let (pad, size) = fit(36.0, 40);
+    assert_eq!(fit(36.0, 5, COLUMN), (PAD, 36.0), "列不多的不变");
+    assert_eq!(fit(36.0, 15, COLUMN), (PAD, 36.0));
+    assert_eq!(
+        fit(36.0, 16, COLUMN).0,
+        13,
+        "960 / 16 = 60，留一个字 34，两边各 13"
+    );
+    let (pad, size) = fit(36.0, 40, COLUMN);
     assert_eq!(pad, 0);
     assert!(size < 36.0 && size * TABLE_SCALE <= 24.0, "{size}");
 }
@@ -149,4 +165,67 @@ fn a_very_wide_chinese_table_keeps_each_character_in_its_cell() {
         }
     }
     assert_eq!(seen, count * 2, "每格一个字");
+}
+
+/// 一格里每一行的字（连接符去掉）。
+fn lines_of(buffer: &cosmic_text::Buffer) -> Vec<String> {
+    buffer
+        .layout_runs()
+        .map(|run| {
+            run.glyphs
+                .iter()
+                .map(|glyph| &run.text[glyph.start..glyph.end])
+                .collect::<String>()
+                .replace(['\u{2060}', '\u{a0}'], "")
+        })
+        .collect()
+}
+
+/// 2026-11-26 那张六列的表（截了几行）：栏宽 960 时正文要折。
+const WIDE: &str = "| 程序 | 启动中位数 | 空闲 PSS | 一轮后 PSS | 空闲 CPU / 分钟 | 出字 CPU |\n|---|--:|--:|--:|--:|--:|\n| LiteMiyu | 10.8 ms | 3.6 MiB | 7.0 MiB | 0.0 ms | 890 ms |\n| opencode | 1,186.6 ms | 465.4 MiB | 505.5 MiB | 6,473.1 ms | 7,025 ms |\n| qwen-code | 1,295.4 ms | 427.3 MiB | 551.3 MiB | 1,148.3 ms | 7,509 ms |\n";
+
+#[test]
+fn a_wide_table_asks_for_a_wider_column_and_then_folds_only_its_header() {
+    let block = blocks(WIDE).remove(0);
+    let table = block.table.as_ref().expect("是表格");
+    let need = needed(&mut system(), table, &look());
+    assert!(need > COLUMN, "这张表正文不折要 {need}");
+    let got = grid_at(WIDE, need);
+    assert_eq!(got.widths.iter().sum::<u32>(), need);
+    for row in &got.rows[1..] {
+        for cell in row.cells.iter().flatten() {
+            let lines = lines_of(cell);
+            assert_eq!(lines.len(), 1, "正文不折：{lines:?} {:?}", got.widths);
+        }
+    }
+    // 表头可以折，但只在空格处：「分钟」「中位数」都在同一行。
+    for cell in got.rows[0].cells.iter().flatten() {
+        let lines = lines_of(cell);
+        let whole = lines.concat();
+        for word in ["分钟", "中位数", "一轮后", "空闲"] {
+            if whole.contains(word) {
+                assert!(
+                    lines.iter().any(|line| line.contains(word)),
+                    "「{word}」被劈开了：{lines:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_number_and_its_unit_never_part_when_a_long_column_gives_way() {
+    // 一列长句子、三列带单位的数：正文整行放不下 960，拆不开的宽放得下。让出来的是长句子那一列，数和单位整个在一行。
+    let long = ["a long description of the run"; 8].join(" ");
+    let got = grid(&format!(
+        "| note | a | b | c |\n|---|--:|--:|--:|\n| {long} | 1,186.6 ms | 465.4 MiB | 6,473.1 ms |\n"
+    ));
+    for cell in got.rows[1].cells.iter().skip(1).flatten() {
+        let lines = lines_of(cell);
+        assert_eq!(lines.len(), 1, "数和单位分开了：{lines:?} {:?}", got.widths);
+    }
+    assert!(
+        lines_of(got.rows[1].cells[0].as_ref().expect("有字")).len() > 1,
+        "长句子折了"
+    );
 }

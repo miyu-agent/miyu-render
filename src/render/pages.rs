@@ -2,7 +2,7 @@
 //! [`MAX_TOTAL`] 像素；超了的交回空的（太长，画不了）。一页装几栏照像素上限算，栏太多的接着放下一页。
 
 use super::columns::{self, Column, GAP, Shape};
-use super::{COLUMN, MIN_HEIGHT, PADDING};
+use super::{MIN_HEIGHT, PADDING};
 
 /// 一页最高（同旧版）。
 pub const MAX_HEIGHT: u32 = 5000;
@@ -13,15 +13,16 @@ pub const MAX_PIXELS: u64 = 20_000_000;
 /// 几页加起来最多多少像素（同旧版）。
 pub const MAX_TOTAL: u64 = 48_000_000;
 
-/// `count` 栏、栏里最高用了 `used` 的一页多宽多高。
-pub fn size(count: usize, used: u32) -> (u32, u32) {
+/// `count` 栏、每栏宽 `column`、栏里最高用了 `used` 的一页多宽多高。
+pub fn size(count: usize, used: u32, column: u32) -> (u32, u32) {
     let count = u32::try_from(count).unwrap_or(u32::MAX);
-    let width = PADDING * 2 + COLUMN * count + GAP * count.saturating_sub(1);
+    let width = PADDING * 2 + column * count + GAP * count.saturating_sub(1);
     (width, (used + PADDING * 2).clamp(MIN_HEIGHT, MAX_HEIGHT))
 }
 
-/// 分栏、分页：交回每一页的栏。有一行字比一页还高、总像素超了的交回空的。
-pub fn plan(shapes: &[Shape]) -> Option<Vec<Vec<Column>>> {
+/// 分栏、分页：交回每一页的栏，每栏宽 `column`。有一行字比一页还高、总像素超了的交回空的。
+pub fn plan(shapes: &[Shape], column: u32) -> Option<Vec<Vec<Column>>> {
+    let size = |count: usize, used: u32| size(count, used, column);
     let max = MAX_HEIGHT - PADDING * 2;
     let floor = MIN_HEIGHT - PADDING * 2;
     let columns = columns::balanced(shapes, max, floor, size, MAX_PIXELS)?;

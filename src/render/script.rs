@@ -44,7 +44,7 @@ pub fn split(spans: &[Span], code_block: bool) -> Vec<(String, Style, Script)> {
 }
 
 /// 中日韩的字（同网页 `base.css` 的 `unicode-range`）。
-fn is_cjk(ch: char) -> bool {
+pub(super) fn is_cjk(ch: char) -> bool {
     matches!(
         u32::from(ch),
         0x2E80..=0x2FDF | 0x3000..=0x303F | 0x3040..=0x30FF | 0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xF900..=0xFAFF | 0xFE30..=0xFE4F | 0xFF00..=0xFFEF
